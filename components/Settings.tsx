@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { NotificationManager } from '../services/notificationManager';
-import { Shield, RefreshCw, Key, LogOut, Info, Trash2, UserCheck, LogIn, AlertCircle, CheckCircle2, Copy, ExternalLink, HelpCircle, AlertTriangle, Eye, EyeOff, Sparkles, User, Mail, Calendar, Clock, Bell, BellOff, BellRing, FileText } from 'lucide-react';
+import { Shield, RefreshCw, Key, LogOut, Info, Trash2, UserCheck, LogIn, AlertCircle, CheckCircle2, Copy, ExternalLink, HelpCircle, AlertTriangle, Eye, EyeOff, Sparkles, User, Mail, Calendar, Clock, Bell, BellOff, BellRing, FileText, Download, Smartphone } from 'lucide-react';
 import { SyncProgress } from '../types';
 import { AutoSyncService, AutoSyncSettings } from '../services/autoSync';
 import TimePicker from './TimePicker';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 interface SettingsProps {
   user: any;
@@ -22,6 +23,8 @@ interface SettingsProps {
   geminiApiKey: string;
   onGeminiApiKeyChange: (key: string) => void;
   onPrivacyPolicyClick?: () => void;
+  onShowInstallPrompt?: () => void;
+  deferredPrompt?: any;
 }
 
 const Settings: React.FC<SettingsProps> = ({
@@ -39,9 +42,12 @@ const Settings: React.FC<SettingsProps> = ({
   onToggleDummyData,
   geminiApiKey,
   onGeminiApiKeyChange,
-  onPrivacyPolicyClick
+  onPrivacyPolicyClick,
+  onShowInstallPrompt,
+  deferredPrompt
 }) => {
   const [showSetupHelper, setShowSetupHelper] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   const hasEnvApiKey = !!((import.meta as any).env?.VITE_GEMINI_API_KEY);
   
@@ -64,6 +70,18 @@ const Settings: React.FC<SettingsProps> = ({
   });
   const [individualTransactionNotifications, setIndividualTransactionNotifications] = useState<boolean>(() => {
     return localStorage.getItem('qpay_individual_transaction_notifications') === 'true';
+  });
+
+  // Online/Offline status
+  const { isOnline, isOffline } = useOnlineStatus();
+
+  // Check if app is installed
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+             (window.navigator as any).standalone === true;
+    }
+    return false;
   });
 
   // Initialize notification manager
@@ -347,20 +365,21 @@ const Settings: React.FC<SettingsProps> = ({
                 {/* Enhanced Sync Button */}
               <button
                   onClick={handleSyncClick}
-                disabled={isSyncing}
+                disabled={isSyncing || isOffline}
                   className={`w-full h-14 md:h-16 rounded-2xl md:rounded-3xl text-[11px] font-black uppercase tracking-wider shadow-xl transition-all flex items-center justify-center gap-3 active:scale-[0.98] relative overflow-hidden group ${
-                    isSyncing 
-                      ? 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-500 cursor-not-allowed' 
+                    isSyncing || isOffline
+                      ? 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-500 cursor-not-allowed opacity-50' 
                       : 'bg-gradient-to-r from-[var(--brand-primary)] via-[var(--brand-accent)] to-[var(--brand-primary)] text-white hover:shadow-2xl hover:shadow-[var(--brand-primary)]/40'
                   }`}
+                  title={isOffline ? 'Sync unavailable offline' : 'Start Gmail Sync'}
                 >
                   {!isSyncing && (
                     <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
-                  <div className="relative z-10 flex items-center gap-3">
-                    <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={18} className="md:w-5 md:h-5" />
-                    <span className="truncate">{isSyncing ? 'Synchronizing...' : 'Start Gmail Sync'}</span>
-                  </div>
+                    <div className="relative z-10 flex items-center gap-3">
+                      <RefreshCw className={`${isSyncing ? 'animate-spin' : ''} md:w-5 md:h-5`} size={18} />
+                      <span className="truncate">{isSyncing ? 'Synchronizing...' : isOffline ? 'Offline - Sync Unavailable' : 'Start Gmail Sync'}</span>
+                    </div>
                 </button>
 
                 {/* Enhanced Sync Progress */}
@@ -877,6 +896,91 @@ const Settings: React.FC<SettingsProps> = ({
             Clear All Local Data
           </button>
         </div>
+
+        {/* Install App Section */}
+        {!isAppInstalled && (
+          <div className="glass-card p-4 md:p-6 lg:p-8 space-y-4 md:space-y-6">
+            <div className="flex items-center gap-2 md:gap-3 mb-4 md:mb-6">
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-50 text-indigo-600 rounded-lg md:rounded-xl flex items-center justify-center">
+                <Download size={18} className="md:w-5 md:h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm md:text-base font-extrabold text-slate-800 uppercase tracking-tighter">Install App</h3>
+                <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase">Get the full app experience</p>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-lg shrink-0">
+                  <img 
+                    src="/logo.png" 
+                    alt="Peymen" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-black text-slate-900 mb-1">Install Peymen</p>
+                  <p className="text-[10px] font-bold text-slate-600 leading-relaxed">
+                    Install the app for faster access, offline support, and a native app experience.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (deferredPrompt) {
+                    // Direct installation if prompt is available
+                    setIsInstalling(true);
+                    try {
+                      // Show the install prompt
+                      deferredPrompt.prompt();
+                      
+                      // Wait for the user to respond
+                      const { outcome } = await deferredPrompt.userChoice;
+                      
+                      if (outcome === 'accepted') {
+                        // Installation will be handled by appinstalled event in App.tsx
+                        console.log('✅ User accepted installation');
+                      } else {
+                        console.log('❌ User dismissed installation');
+                      }
+                      
+                      setIsInstalling(false);
+                    } catch (error) {
+                      console.error('Install error:', error);
+                      setIsInstalling(false);
+                      // Fallback to modal if direct install fails
+                      if (onShowInstallPrompt) {
+                        onShowInstallPrompt();
+                      }
+                    }
+                  } else {
+                    // Show modal with manual instructions if prompt not available
+                    if (onShowInstallPrompt) {
+                      onShowInstallPrompt();
+                    }
+                  }
+                }}
+                disabled={isInstalling}
+                className="w-full h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isInstalling ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Installing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Smartphone size={16} />
+                    <span>Install App</span>
+                    <Download size={14} />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Privacy Policy & Terms of Service Links */}
         <div className="mt-8 pt-6 border-t border-slate-200 space-y-3">

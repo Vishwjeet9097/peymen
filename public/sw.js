@@ -1,5 +1,5 @@
 // Service Worker for Peymen - Background Sync & Notifications
-const CACHE_NAME = 'peymen-v1';
+const CACHE_NAME = 'peymen-v2';
 const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
 // Install Service Worker
@@ -137,8 +137,8 @@ self.addEventListener('push', (event) => {
     const data = event.data.json();
     const options = {
       body: data.body || data.message,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: '/logo.png',
+      badge: '/logo.png',
       tag: data.tag || 'peymen-notification',
       data: data.data || {},
       requireInteraction: false,
@@ -156,6 +156,22 @@ self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-transactions') {
     event.waitUntil(checkForNewTransactions());
   }
+});
+
+// Fetch handler - bypass cache for PWA assets to ensure fresh logo
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // Don't cache logo.png, manifest.json, or sw.js - always fetch fresh
+  if (url.pathname === '/logo.png' || url.pathname === '/manifest.json' || url.pathname === '/sw.js') {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(() => {
+        // Fallback to network if fetch fails
+        return fetch(event.request);
+      })
+    );
+    return;
+  }
+  // For all other requests, use default browser behavior (no caching by SW)
 });
 
 console.log('[SW] Service Worker loaded');

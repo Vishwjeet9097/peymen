@@ -176,7 +176,8 @@ vite.config.*.timestamp-*
 # ============================================
 # PWA & Service Workers
 # ============================================
-sw.js
+# Note: sw.js in public/ should be committed and copied to dist
+# Only ignore generated service workers
 sw.js.map
 workbox-*.js
 workbox-*.js.map

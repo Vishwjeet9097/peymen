@@ -1,5 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
   LineChart,
   Line,
@@ -76,6 +77,7 @@ interface DashboardProps {
   syncProgress?: SyncProgress;
   onTransactionClick?: (transaction: Transaction) => void;
   onNavigateToTransactions?: () => void;
+  onNavigateToAnalytics?: () => void;
 }
 
 // All available categories
@@ -137,8 +139,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   isSyncing,
   syncProgress,
   onTransactionClick,
-  onNavigateToTransactions
+  onNavigateToTransactions,
+  onNavigateToAnalytics
 }) => {
+  const { isOnline, isOffline } = useOnlineStatus();
   const [selectedCardSource, setSelectedCardSource] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -315,47 +319,30 @@ const Dashboard: React.FC<DashboardProps> = ({
             cards[cardNumber].lastUsed = t.date;
           }
         } else {
-          // For non-card transactions (UPI, Cash, etc.) or UPI with account numbers
+          // For non-card transactions (UPI, Cash, etc.)
           const source = t.source || 'Other';
           
-          // Create a unique key for UPI transactions - use bank + UPI + account number if available
+          // Group ALL UPI transactions into a single card
           let cardKey = source;
+          let brandName = source;
+          
           if (isUPI) {
-            const bankName = getBankName(source);
-            const accountNum = cardNumber || extractLast4Digits(source);
-            if (bankName !== 'Bank' && accountNum) {
-              cardKey = `${bankName} UPI ${accountNum}`;
-            } else if (bankName !== 'Bank') {
-              cardKey = `${bankName} UPI`;
-            } else {
-              cardKey = source;
-            }
+            // Use a common key for all UPI transactions
+            cardKey = 'UPI_PAYMENT';
+            brandName = 'UPI Payment';
+          } else if (source.toLowerCase().includes('gmail sync')) {
+            // Group ALL Gmail Sync transactions (including Auto Pay, Failed) into a single card
+            cardKey = 'GMAIL_SYNC';
+            brandName = 'Gmail Sync';
           }
           
           if (!cards[cardKey]) {
-            // Extract bank name for UPI transactions
-            let brandName = source;
-            if (isUPI) {
-              const bankName = getBankName(source);
-              if (bankName !== 'Bank') {
-                brandName = `${bankName} UPI`;
-              } else {
-                // Try to extract from source like "HDFC Bank UPI 3556"
-                const bankMatch = source.match(/^([A-Za-z\s]+?)\s*(?:Bank\s+)?UPI/i);
-                if (bankMatch) {
-                  brandName = `${bankMatch[1].trim()} UPI`;
-                } else {
-                  brandName = 'UPI Payment';
-                }
-              }
-            }
-            
             cards[cardKey] = {
               totalSpent: 0,
               count: 0,
               lastUsed: t.date,
-              type: source,
-              cardNumber: isUPI ? (cardNumber || '') : '', // Store account number for UPI if available
+              type: isUPI ? 'UPI Payment' : (cardKey === 'GMAIL_SYNC' ? 'Gmail Sync' : source),
+              cardNumber: '', // No card number for UPI/Gmail Sync
               brandName: brandName
             };
           }
@@ -391,7 +378,17 @@ const Dashboard: React.FC<DashboardProps> = ({
         const txCardNumber = getPrimaryCardNumber(t.source);
         return matchesDate && txCardNumber === selectedCard.cardNumber;
       } else {
-        // For non-card sources (UPI, Cash, etc.)
+        // For Gmail Sync, match all Gmail Sync transactions (including Auto Pay, Failed)
+        if (selectedCardSource === 'Gmail Sync') {
+          const source = (t.source || '').toLowerCase();
+          return matchesDate && source.includes('gmail sync');
+        }
+        // For UPI transactions, match all UPI sources when "UPI Payment" is selected
+        if (selectedCardSource === 'UPI Payment') {
+          const isUPI = isUPITransaction(t.source);
+          return matchesDate && isUPI;
+        }
+        // For non-card sources (Cash, etc.)
         return matchesDate && t.source === selectedCardSource;
       }
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -640,6 +637,11 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Get display name for cardholder/payment method
   const getCardholderName = (source: string, brandName: string): string => {
+    // Handle Gmail Sync - return clean name without status suffixes
+    if (source.toLowerCase().includes('gmail sync')) {
+      return 'Gmail Sync';
+    }
+    
     if (isUPITransaction(source)) {
       // If brandName already has "UPI" in it, use it directly
       if (brandName && brandName.toLowerCase().includes('upi')) {
@@ -673,6 +675,36 @@ const Dashboard: React.FC<DashboardProps> = ({
   const getCardDesign = (source: string, index: number) => {
     const bankName = getBankName(source);
     const s = source.toLowerCase();
+    const isUPI = isUPITransaction(source) || source === 'UPI Payment';
+    const isGmailSync = s.includes('gmail sync') || source === 'Gmail Sync';
+
+    // Gmail Sync Card Design - Professional Blue/Grey gradient
+    if (isGmailSync) {
+      return {
+        bg: 'bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800',
+        accent: 'from-blue-400/20 to-slate-400/20',
+        text: 'text-white',
+        logo: 'GMAIL',
+        chip: 'bg-yellow-400',
+        network: 'SYNC',
+        gold: false,
+        pattern: null
+      };
+    }
+
+    // Unified UPI Card Design - Purple/Indigo gradient
+    if (isUPI) {
+      return {
+        bg: 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800',
+        accent: 'from-indigo-400/20 to-purple-400/20',
+        text: 'text-white',
+        logo: 'UPI',
+        chip: 'bg-yellow-400',
+        network: 'UPI',
+        gold: false,
+        pattern: null
+      };
+    }
 
     // SBI Card Design - Blue
     if (bankName === 'SBI') {
@@ -1063,14 +1095,15 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={onSync}
-            disabled={isSyncing}
-            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isSyncing
-              ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] border border-[var(--brand-primary)]/20'
+            disabled={isSyncing || isOffline}
+            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isSyncing || isOffline
+              ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] border border-[var(--brand-primary)]/20 opacity-50 cursor-not-allowed'
               : 'bg-white text-slate-700 border border-slate-100 hover:bg-slate-50 shadow-sm'
               }`}
+            title={isOffline ? 'Sync unavailable offline' : 'Sync Gmail'}
           >
             <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync Gmail'}</span>
+            <span>{isSyncing ? 'Syncing...' : isOffline ? 'Offline' : 'Sync Gmail'}</span>
           </button>
           <button
             onClick={onAddClick}
@@ -1221,12 +1254,12 @@ const Dashboard: React.FC<DashboardProps> = ({
               const cardDesign = getCardDesign(card.type, idx);
               const bankName = getBankName(card.type);
               const cardNetwork = getCardNetwork(card.type);
-              const isUPI = isUPITransaction(card.type);
-              // Use brandName if it's already formatted correctly, otherwise extract from type
-              const finalBrandName = (isUPI && card.brandName && card.brandName.toLowerCase().includes('upi')) 
-                ? card.brandName 
-                : (isUPI ? `${bankName} UPI` : card.brandName);
-              const cardholderName = getCardholderName(card.type, finalBrandName);
+              const isUPI = isUPITransaction(card.type) || card.type === 'UPI Payment';
+              const isGmailSync = card.type === 'Gmail Sync' || card.type.toLowerCase().includes('gmail sync');
+              // For unified UPI card, use "UPI Payment" as brand name
+              // For Gmail Sync, use "Gmail Sync" as brand name
+              const finalBrandName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Gmail Sync' : card.brandName);
+              const cardholderName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Gmail Sync' : getCardholderName(card.type, finalBrandName));
               
               // Create unique key combining type, cardNumber, and index to avoid duplicates
               const uniqueKey = `${card.type}-${card.cardNumber || 'no-card'}-${idx}`;
@@ -1248,7 +1281,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-center gap-2">
                         <div className={`px-2.5 py-1 rounded-lg ${cardDesign.gold ? 'bg-yellow-400/20 border border-yellow-400/30' : 'bg-white/10 backdrop-blur-sm'}`}>
                           <p className={`text-[9px] md:text-[10px] font-black uppercase tracking-wider ${cardDesign.text}`}>
-                            {isUPI ? `${bankName} UPI` : bankName}
+                            {isUPI ? 'UPI Payment' : (isGmailSync ? 'GMAIL' : bankName)}
                           </p>
                         </div>
                       </div>
@@ -1281,23 +1314,36 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                       {/* Card Number */}
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          {[1, 2, 3].map(i => (
-                            <span key={i} className="text-sm md:text-base font-mono tracking-widest">••••</span>
-                          ))}
-                          <span className="text-sm md:text-base font-mono font-black tracking-widest">
-                            {card.cardNumber || '****'}
-                          </span>
-                        </div>
-                        {card.cardNumber && (
-                          <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
-                            {isUPI ? `${bankName} UPI` : (card.brandName || getCardBrand(card.type))}
-                          </p>
-                        )}
-                        {!card.cardNumber && isUPI && (
-                          <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
-                            {bankName} UPI
-                          </p>
+                        {isUPI ? (
+                          // UPI Payment - Show unified UPI logo/icon
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Wallet size={24} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-lg md:text-xl font-black tracking-wider">UPI</p>
+                              <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Unified Payments
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          // Regular Card - Show card number
+                          <>
+                            <div className="flex items-center gap-2">
+                              {[1, 2, 3].map(i => (
+                                <span key={i} className="text-sm md:text-base font-mono tracking-widest">••••</span>
+                              ))}
+                              <span className="text-sm md:text-base font-mono font-black tracking-widest">
+                                {card.cardNumber || '****'}
+                              </span>
+                            </div>
+                            {card.cardNumber && (
+                              <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                {card.brandName || getCardBrand(card.type)}
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1467,7 +1513,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             <h3 className="text-sm md:text-base lg:text-lg font-black text-slate-800">Smart Analysis</h3>
             <p className="text-[10px] md:text-xs text-slate-400 font-medium">Spending on <span className="text-slate-600 font-bold">{primaryCard.type}</span> is trending higher.</p>
           </div>
-          <button className="hidden sm:block lg:w-full py-2.5 md:py-3 px-4 lg:px-0 bg-slate-900 text-white rounded-xl lg:rounded-2xl text-[8px] md:text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95">Report</button>
+          <button 
+            onClick={onNavigateToAnalytics}
+            className="hidden sm:block lg:w-full py-2.5 md:py-3 px-4 lg:px-0 bg-slate-900 text-white rounded-xl lg:rounded-2xl text-[8px] md:text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95"
+            aria-label="View detailed analytics and reports"
+          >
+            Report
+          </button>
         </div>
       </div>
 

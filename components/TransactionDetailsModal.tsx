@@ -289,7 +289,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       Payment
                     </p>
                     <p className="text-xs sm:text-sm font-black text-slate-900 break-words truncate">
-                      {transaction.source || 'Not specified'}
+                      {transaction.source ? transaction.source.replace(/(\*{4}\d{4})\s+\1/g, '$1') : 'Not specified'}
                     </p>
                   </div>
                 </div>

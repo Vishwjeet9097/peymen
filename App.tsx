@@ -21,6 +21,7 @@ import TransactionDetailsModal from './components/TransactionDetailsModal';
 import Onboarding from './components/Onboarding';
 import LoginScreen from './components/LoginScreen';
 import FirstTimeSyncModal from './components/FirstTimeSyncModal';
+import InstallPromptModal from './components/InstallPromptModal';
 
 const isDevelopment = import.meta.env.DEV;
 
@@ -94,6 +95,70 @@ const App: React.FC = () => {
     return localStorage.getItem('qpay_guest_mode') === 'true';
   });
   const [showFirstTimeSyncModal, setShowFirstTimeSyncModal] = useState<boolean>(false);
+  
+  // PWA Install Prompt States
+  const [showInstallPrompt, setShowInstallPrompt] = useState<boolean>(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
+    // Check if app is already installed
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+             (window.navigator as any).standalone === true;
+    }
+    return false;
+  });
+
+  // Listen for beforeinstallprompt event and check install status
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing
+      e.preventDefault();
+      // Stash the event so it can be triggered later
+      setDeferredPrompt(e);
+      console.log('✅ Install prompt available');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Listen for app installed event
+    const handleAppInstalled = () => {
+      console.log('✅ App installed');
+      setIsAppInstalled(true);
+      setShowInstallPrompt(false);
+      setDeferredPrompt(null);
+      notificationService.add(
+        'success',
+        'App Installed!',
+        'Peymen has been installed successfully. You can now access it from your home screen.',
+        true
+      );
+    };
+
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // Check if already installed on mount
+    const checkInstalled = () => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                          (window.navigator as any).standalone === true;
+      if (isStandalone) {
+        setIsAppInstalled(true);
+        console.log('✅ App already installed (standalone mode)');
+      }
+    };
+    checkInstalled();
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  // Check if user has dismissed install prompt before
+  const hasDismissedInstallPrompt = () => {
+    return localStorage.getItem('qpay_install_prompt_dismissed') === 'true';
+  };
 
   const handleLogout = useCallback(() => {
     if (token) AuthService.logout(token);
@@ -240,6 +305,19 @@ const App: React.FC = () => {
         localStorage.setItem('qpay_show_dummy', 'false');
         localStorage.removeItem('qpay_guest_mode');
         setShowLoginScreen(false);
+
+        // Show install prompt after successful login (if not already installed and not dismissed)
+        // Always show if not installed (will show manual instructions if deferredPrompt not available)
+        const checkIfInstalled = window.matchMedia('(display-mode: standalone)').matches ||
+                                 (window.navigator as any).standalone === true;
+        const dismissed = localStorage.getItem('qpay_install_prompt_dismissed') === 'true';
+        
+        if (!checkIfInstalled && !dismissed) {
+          // Small delay to let the UI settle after login
+          setTimeout(() => {
+            setShowInstallPrompt(true);
+          }, 2000);
+        }
       }
     });
   }, [clientId, fetchProfile, setActiveTab]);
@@ -820,6 +898,7 @@ const App: React.FC = () => {
             setIsDetailsModalOpen(true);
           }}
           onNavigateToTransactions={() => setActiveTab('transactions')}
+          onNavigateToAnalytics={() => setActiveTab('analytics')}
         />
       )}
 
@@ -864,6 +943,12 @@ const App: React.FC = () => {
           geminiApiKey={geminiApiKey}
           onGeminiApiKeyChange={handleGeminiApiKeyChange}
           onPrivacyPolicyClick={() => setActiveTab('privacy')}
+          onShowInstallPrompt={() => {
+            // Clear dismissed flag to allow showing again
+            localStorage.removeItem('qpay_install_prompt_dismissed');
+            setShowInstallPrompt(true);
+          }}
+          deferredPrompt={deferredPrompt}
         />
       )}
 
@@ -902,6 +987,19 @@ const App: React.FC = () => {
         onClose={handleSkipFirstTimeSync}
         onSync={handleFirstTimeSync}
         onSkip={handleSkipFirstTimeSync}
+      />
+
+      <InstallPromptModal
+        isOpen={showInstallPrompt}
+        onClose={() => {
+          setShowInstallPrompt(false);
+          localStorage.setItem('qpay_install_prompt_dismissed', 'true');
+        }}
+        onInstall={() => {
+          setShowInstallPrompt(false);
+          setIsAppInstalled(true);
+        }}
+        deferredPrompt={deferredPrompt}
       />
     </Layout>
   );

@@ -6,11 +6,21 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Peymen | Smart Payment Tracker</title>
-    <link rel="icon" type="image/png" href="/logo.png">
-    <link rel="apple-touch-icon" href="/logo.png">
+    <link rel="icon" type="image/png" href="/logo.png?v=3">
+    <link rel="apple-touch-icon" href="/logo.png?v=3">
+    <link rel="apple-touch-icon" sizes="192x192" href="/logo.png?v=3">
+    <link rel="apple-touch-icon" sizes="512x512" href="/logo.png?v=3">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json?v=3">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Peymen">
+    <!-- Fallback: Inter Font for non-Apple devices -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         /* SF Pro Display - Apple's System Font */
         @font-face {
@@ -19,9 +29,6 @@
             font-weight: 100 900;
             font-style: normal;
         }
-
-        /* Fallback: Inter Font for non-Apple devices */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
         /* Design Tokens - Fintech UI System */
         :root {
@@ -431,6 +438,32 @@
             animation: fadeIn 0.3s ease-out forwards;
         }
 
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-slide-down {
+            animation: slideDown 0.3s ease-out forwards;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         /* Stagger effect for lists */
         .stagger-item:nth-child(1) {
             animation-delay: 0.05s;
@@ -484,7 +517,6 @@
   }
 }
 </script>
-    <link rel="stylesheet" href="/index.css">
 </head>
 
 <body>
