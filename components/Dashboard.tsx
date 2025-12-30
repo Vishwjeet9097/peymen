@@ -75,6 +75,7 @@ interface DashboardProps {
   isSyncing?: boolean;
   syncProgress?: SyncProgress;
   onTransactionClick?: (transaction: Transaction) => void;
+  onNavigateToTransactions?: () => void;
 }
 
 // All available categories
@@ -135,7 +136,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   onSync,
   isSyncing,
   syncProgress,
-  onTransactionClick
+  onTransactionClick,
+  onNavigateToTransactions
 }) => {
   const [selectedCardSource, setSelectedCardSource] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
@@ -761,6 +763,44 @@ const Dashboard: React.FC<DashboardProps> = ({
       return `${brand} ****${last4}`;
     }
     return source;
+  };
+
+  // Get initial from name (first letter, uppercase)
+  const getNameInitial = (name: string): string => {
+    if (!name || name.trim().length === 0) return '?';
+    const firstChar = name.trim().charAt(0).toUpperCase();
+    return /[A-Z0-9]/.test(firstChar) ? firstChar : '?';
+  };
+
+  // Generate consistent gradient color based on name
+  const getNameGradient = (name: string): string => {
+    if (!name || name.trim().length === 0) return 'from-slate-400 to-slate-500';
+    
+    // Simple hash function to get consistent color for same name
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    // Predefined beautiful gradient pairs
+    const gradients = [
+      'from-blue-500 to-blue-600',
+      'from-purple-500 to-purple-600',
+      'from-pink-500 to-pink-600',
+      'from-indigo-500 to-indigo-600',
+      'from-emerald-500 to-emerald-600',
+      'from-teal-500 to-teal-600',
+      'from-cyan-500 to-cyan-600',
+      'from-rose-500 to-rose-600',
+      'from-orange-500 to-orange-600',
+      'from-amber-500 to-amber-600',
+      'from-violet-500 to-violet-600',
+      'from-fuchsia-500 to-fuchsia-600',
+    ];
+    
+    // Use hash to select gradient (ensure positive index)
+    const index = Math.abs(hash) % gradients.length;
+    return gradients[index];
   };
 
   const resetFilters = () => {
@@ -1436,7 +1476,12 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="lg:col-span-6 glass-card p-5 md:p-6 lg:p-8">
           <div className="flex justify-between items-center mb-4 md:mb-6">
             <h3 className="text-[10px] md:text-sm font-black text-slate-800 uppercase tracking-widest">Recent Expenses</h3>
-            <button className="text-[9px] md:text-[10px] font-bold text-[var(--brand-primary)] hover:underline">See All</button>
+            <button 
+              onClick={onNavigateToTransactions}
+              className="text-[9px] md:text-[10px] font-bold text-[var(--brand-primary)] hover:underline transition-all active:scale-95 cursor-pointer"
+            >
+              See All
+            </button>
           </div>
           <div className="space-y-4 md:space-y-6">
             {recentActivity.length > 0 ? recentActivity.map((t, i) => (
@@ -1473,14 +1518,19 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="lg:col-span-6 glass-card p-5 md:p-6 lg:p-8">
           <div className="flex justify-between items-center mb-4 md:mb-6">
             <h3 className="text-[10px] md:text-sm font-black text-slate-800 uppercase tracking-widest">Recent Income</h3>
-            <button className="text-[9px] md:text-[10px] font-bold text-[var(--brand-primary)] hover:underline">See All</button>
+            <button 
+              onClick={onNavigateToTransactions}
+              className="text-[9px] md:text-[10px] font-bold text-[var(--brand-primary)] hover:underline transition-all active:scale-95 cursor-pointer"
+            >
+              See All
+            </button>
           </div>
           <div className="space-y-4 md:space-y-6">
             {recentInflow.length > 0 ? recentInflow.map((t, i) => (
               <div key={i} onClick={() => onTransactionClick?.(t)} className="flex items-center justify-between group cursor-pointer">
                 <div className="flex items-center gap-3 lg:gap-4 overflow-hidden">
-                  <div className="w-9 h-9 md:w-11 md:h-11 bg-slate-200 rounded-xl md:rounded-2xl overflow-hidden shadow-sm shrink-0 transition-transform group-hover:scale-105">
-                    <img src={`https://i.pravatar.cc/150?u=${t.merchant}`} alt="user" className="w-full h-full object-cover" />
+                  <div className={`w-9 h-9 md:w-11 md:h-11 bg-gradient-to-br ${getNameGradient(t.merchant)} rounded-xl md:rounded-2xl flex items-center justify-center text-white font-black text-sm md:text-base shadow-sm shrink-0 transition-transform group-hover:scale-105`}>
+                    {getNameInitial(t.merchant)}
                   </div>
                   <div className="overflow-hidden">
                     <p className="text-[10px] md:text-xs font-black text-slate-800 leading-tight truncate">{t.merchant}</p>

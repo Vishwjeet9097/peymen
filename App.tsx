@@ -819,6 +819,7 @@ const App: React.FC = () => {
             setSelectedTransaction(transaction);
             setIsDetailsModalOpen(true);
           }}
+          onNavigateToTransactions={() => setActiveTab('transactions')}
         />
       )}
 
