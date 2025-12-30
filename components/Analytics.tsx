@@ -88,24 +88,41 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
   // Filter transactions based on timeframe and filters
   const filteredData = useMemo(() => {
     const now = new Date();
+    now.setHours(23, 59, 59, 999); // End of today
     let filtered = transactions;
 
-    // Apply date filter
+    // Apply date filter - Professional date range calculation
     filtered = filtered.filter(t => {
       const tDate = new Date(t.date);
+      tDate.setHours(0, 0, 0, 0); // Start of transaction day
       
       if (timeFrame === '7d') {
-        return (now.getTime() - tDate.getTime()) <= 7 * 86400000;
+        const sevenDaysAgo = new Date(now);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        return tDate >= sevenDaysAgo && tDate <= now;
       }
       if (timeFrame === '30d') {
-        return (now.getTime() - tDate.getTime()) <= 30 * 86400000;
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+        return tDate >= thirtyDaysAgo && tDate <= now;
       }
       if (timeFrame === '90d') {
-        return (now.getTime() - tDate.getTime()) <= 90 * 86400000;
+        const ninetyDaysAgo = new Date(now);
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        ninetyDaysAgo.setHours(0, 0, 0, 0);
+        return tDate >= ninetyDaysAgo && tDate <= now;
+      }
+      if (timeFrame === 'all') {
+        // All time - no date filtering
+        return true;
       }
       if (timeFrame === 'custom' && selectedMonth && selectedYear) {
         const filterDate = new Date(parseInt(selectedYear), parseInt(selectedMonth) - 1, 1);
+        filterDate.setHours(0, 0, 0, 0);
         const nextMonth = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0);
+        nextMonth.setHours(23, 59, 59, 999);
         return tDate >= filterDate && tDate <= nextMonth;
       }
       return true;
@@ -142,8 +159,33 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
   const stats = useMemo(() => {
     const totalDebit = debits.reduce((acc, t) => acc + t.amount, 0);
     const totalCredit = credits.reduce((acc, t) => acc + t.amount, 0);
-    const daysCount = timeFrame === 'all' ? 30 : timeFrame === 'custom' ? 30 : parseInt(timeFrame) || 30;
-    const avgPerDay = totalDebit / daysCount;
+    
+    // Calculate actual days count based on filtered data
+    let daysCount = 30;
+    if (timeFrame === '7d') {
+      daysCount = 7;
+    } else if (timeFrame === '30d') {
+      daysCount = 30;
+    } else if (timeFrame === '90d') {
+      daysCount = 90;
+    } else if (timeFrame === 'all') {
+      // Calculate actual days span from filtered data
+      if (filteredData.length > 0) {
+        const dates = filteredData.map(t => new Date(t.date).getTime());
+        const minDate = Math.min(...dates);
+        const maxDate = Math.max(...dates);
+        const diffTime = maxDate - minDate;
+        daysCount = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+      } else {
+        daysCount = 30; // Default fallback
+      }
+    } else if (timeFrame === 'custom' && selectedMonth && selectedYear) {
+      // Calculate days in selected month
+      const daysInMonth = new Date(parseInt(selectedYear), parseInt(selectedMonth), 0).getDate();
+      daysCount = daysInMonth;
+    }
+    
+    const avgPerDay = daysCount > 0 ? totalDebit / daysCount : 0;
     const netFlow = totalCredit - totalDebit;
 
     // Category mapping
@@ -165,18 +207,38 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
 
-    // Timeline mapping (Spending by Day)
+    // Timeline mapping (Spending by Day) - Sorted by date
     const timelineMap: Record<string, number> = {};
     debits.forEach(t => {
       const d = new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       timelineMap[d] = (timelineMap[d] || 0) + t.amount;
     });
+    
+    // Convert to array and sort by date, then take appropriate slice based on timeframe
     const timeline = Object.entries(timelineMap)
-      .map(([date, amount]) => ({ date, amount }))
-      .slice(-10); // Last 10 active days
+      .map(([date, amount]) => {
+        // Parse date for sorting
+        const dateObj = new Date(date);
+        return { date, amount, dateObj };
+      })
+      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
+      .map(({ date, amount }) => ({ date, amount }));
+    
+    // Show appropriate number of days based on timeframe
+    let timelineSlice = timeline;
+    if (timeFrame === '7d') {
+      timelineSlice = timeline.slice(-7);
+    } else if (timeFrame === '30d') {
+      timelineSlice = timeline.slice(-30);
+    } else if (timeFrame === '90d') {
+      timelineSlice = timeline.slice(-90);
+    } else {
+      // For 'all' or 'custom', show all or limit to last 30 for readability
+      timelineSlice = timeline.length > 30 ? timeline.slice(-30) : timeline;
+    }
 
-    return { totalDebit, totalCredit, avgPerDay, categories, topMerchants, timeline, netFlow };
-  }, [debits, credits, timeFrame]);
+    return { totalDebit, totalCredit, avgPerDay, categories, topMerchants, timeline: timelineSlice, netFlow };
+  }, [debits, credits, timeFrame, filteredData, selectedMonth, selectedYear]);
 
   const drillDownTransactions = useMemo(() => {
     if (!selectedCategory) return debits.slice(0, 5);
@@ -225,8 +287,8 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
             )}
           </button>
 
-          {/* Time Frame Selector */}
-          <div className="flex bg-white p-1.5 rounded-xl shadow-sm border border-slate-100">
+          {/* Time Frame Selector - Premium Design */}
+          <div className="flex bg-white/80 backdrop-blur-sm p-1.5 rounded-2xl shadow-md border border-slate-200/60 gap-1">
             {(['7d', '30d', '90d', 'all'] as TimeFrame[]).map((f) => (
               <button
                 key={f}
@@ -237,13 +299,16 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
                     setSelectedYear('');
                   }
                 }}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 relative ${
                   timeFrame === f 
-                    ? 'bg-[var(--brand-primary)] text-white shadow-lg shadow-[var(--brand-primary)]/20' 
-                    : 'text-slate-400 hover:text-slate-600'
+                    ? 'bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-accent)] text-white shadow-lg shadow-[var(--brand-primary)]/30 scale-105' 
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {f === 'all' ? 'All Time' : f}
+                {f === 'all' ? 'All Time' : f.toUpperCase()}
+                {timeFrame === f && (
+                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[var(--brand-primary)]/20 to-[var(--brand-accent)]/20 animate-pulse pointer-events-none"></div>
+                )}
               </button>
             ))}
           </div>
