@@ -1,0 +1,317 @@
+# ============================================
+# Peymen - Smart Payment Tracker
+# Professional .gitignore Configuration
+# ============================================
+
+# ============================================
+# Dependencies & Package Managers
+# ============================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+.pnp.*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.npm
+.yarn-integrity
+
+# ============================================
+# Build Outputs & Distribution
+# ============================================
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+*.local
+
+# ============================================
+# Environment Variables & Secrets
+# ============================================
+.env
+.env.*
+!.env.example
+!.env.template
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.development
+.env.production
+.env.test
+*.pem
+*.key
+*.cert
+secrets/
+.secrets/
+
+# ============================================
+# IDE & Editor Configuration
+# ============================================
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.code-workspace
+
+# IntelliJ IDEA / WebStorm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================
+# Operating System Files
+# ============================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+.DocumentRevisions-V100
+.fseventsd
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# Logs & Debugging
+# ============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*.log.*
+
+# ============================================
+# Testing & Coverage
+# ============================================
+coverage/
+*.lcov
+.nyc_output/
+.jest/
+.vitest/
+*.test.js.snap
+test-results/
+playwright-report/
+playwright/.cache/
+e2e-results/
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.tsbuildinfo
+
+# ============================================
+# Vite & Build Tools
+# ============================================
+.vite/
+vite.config.*.timestamp-*
+.rollup.cache/
+
+# ============================================
+# PWA & Service Workers
+# ============================================
+sw.js
+sw.js.map
+workbox-*.js
+workbox-*.js.map
+precache-manifest.*.js
+service-worker.js
+service-worker.js.map
+
+# ============================================
+# Caching & Temporary Files
+# ============================================
+.cache/
+.parcel-cache/
+.temp/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+.turbo/
+.eslintcache
+.stylelintcache
+.node_repl_history
+
+# ============================================
+# Database & Storage
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+*.dump
+
+# ============================================
+# Deployment & Hosting
+# ============================================
+# Netlify
+.netlify/
+.netlify.toml.local
+
+# Vercel
+.vercel/
+.vercel.json.local
+
+# Firebase
+.firebase/
+.firebaserc.local
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# AWS
+.aws-sam/
+samconfig.toml
+
+# Serverless
+.serverless/
+
+# ============================================
+# Monitoring & Analytics
+# ============================================
+.sentryclirc
+.sentry/
+sourcemaps/
+
+# ============================================
+# Documentation Build
+# ============================================
+docs/_build/
+site/
+storybook-static/
+.docusaurus/
+
+# ============================================
+# Package Archives
+# ============================================
+*.tgz
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# ============================================
+# Miscellaneous
+# ============================================
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Patch files
+*.patch
+*.diff
+
+# Lock files (uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Local configuration overrides
+config.local.*
+settings.local.*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ============================================
+# Project-Specific
+# ============================================
+# Add any project-specific files or directories here
+# Example:
+# custom-build/
+# generated/

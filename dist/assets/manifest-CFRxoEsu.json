@@ -1,0 +1,22 @@
+
+{
+  "short_name": "QPay",
+  "name": "Q-Pay Fintech Sync",
+  "icons": [
+    {
+      "src": "https://picsum.photos/192/192",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://picsum.photos/512/512",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "theme_color": "#6366f1",
+  "description": "Gmail-powered financial tracking."
+}

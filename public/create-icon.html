@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Create Icon</title>
+</head>
+<body>
+  <canvas id="canvas" width="192" height="192"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Background gradient
+    const gradient = ctx.createLinearGradient(0, 0, 192, 192);
+    gradient.addColorStop(0, '#6366f1');
+    gradient.addColorStop(0.5, '#8b5cf6');
+    gradient.addColorStop(1, '#ec4899');
+    
+    // Draw circle background
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(96, 96, 90, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw letter Q in white
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 120px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Q', 96, 96);
+    
+    // Convert to blob and download
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'icon-192.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      console.log('Icon created!');
+    }, 'image/png');
+  </script>
+</body>
+</html>

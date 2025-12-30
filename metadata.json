@@ -1,0 +1,5 @@
+{
+  "name": "Peymen - Smart Payment Tracker",
+  "description": "A production-grade fintech PWA that syncs real transaction data from your Gmail account using Google OAuth and IndexedDB for secure local storage.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,33 @@
+
+{
+  "short_name": "Peymen",
+  "name": "Peymen - Smart Payment Tracker",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "theme_color": "#6366f1",
+  "description": "Smart payment tracking powered by Gmail with real-time notifications.",
+  "scope": "/",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}

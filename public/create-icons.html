@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script>
+const canvas = document.createElement('canvas');
+canvas.width = 512;
+canvas.height = 512;
+const ctx = canvas.getContext('2d');
+
+// Background gradient
+const bgGradient = ctx.createLinearGradient(0, 0, 512, 512);
+bgGradient.addColorStop(0, '#6366f1');
+bgGradient.addColorStop(0.5, '#8b5cf6');
+bgGradient.addColorStop(1, '#ec4899');
+
+// Draw background circle
+ctx.fillStyle = bgGradient;
+ctx.beginPath();
+ctx.arc(256, 256, 240, 0, Math.PI * 2);
+ctx.fill();
+
+// Letter P - white
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(180, 140, 140, 40); // Top horizontal
+ctx.fillRect(180, 140, 40, 240); // Left vertical
+ctx.fillRect(180, 340, 140, 40); // Bottom horizontal
+ctx.fillRect(280, 240, 40, 100); // Right vertical
+
+// Cut out inner part of P
+ctx.fillStyle = bgGradient;
+ctx.fillRect(220, 180, 60, 60);
+
+// Convert to data URL and download
+const dataURL = canvas.toDataURL('image/png');
+console.log('192x192:', dataURL);
+</script>
+</head>
+<body>Open console to see data URLs</body>
+</html>
