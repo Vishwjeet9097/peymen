@@ -913,7 +913,16 @@ const App: React.FC = () => {
         />
       )}
 
-      {activeTab === 'analytics' && <Analytics transactions={displayTransactions} onShowDetails={() => { }} />}
+      {activeTab === 'analytics' && (
+        <Analytics 
+          transactions={displayTransactions} 
+          onShowDetails={(transaction) => {
+            setSelectedTransaction(transaction);
+            setIsDetailsModalOpen(true);
+          }}
+          onNavigateToTransactions={() => setActiveTab('transactions')}
+        />
+      )}
 
       {activeTab === 'settings' && (
         <Settings

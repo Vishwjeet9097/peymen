@@ -41,11 +41,12 @@ import {
 interface AnalyticsProps {
   transactions: Transaction[];
   onShowDetails: (t: Transaction) => void;
+  onNavigateToTransactions?: () => void;
 }
 
 type TimeFrame = '7d' | '30d' | '90d' | 'all' | 'custom';
 
-const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) => {
+const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails, onNavigateToTransactions }) => {
   const [timeFrame, setTimeFrame] = useState<TimeFrame>('30d');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -727,8 +728,11 @@ const Analytics: React.FC<AnalyticsProps> = ({ transactions, onShowDetails }) =>
             </div>
           )}
 
-          <button className="w-full py-4 border-2 border-dashed border-slate-100 rounded-2xl text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:bg-slate-50 hover:border-slate-200 transition-all flex items-center justify-center gap-2">
-            <MoreHorizontal size={14} strokeWidth={2} />
+          <button 
+            onClick={() => onNavigateToTransactions?.()}
+            className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] hover:bg-gradient-to-r hover:from-[var(--brand-primary)]/5 hover:to-[var(--brand-accent)]/5 hover:border-[var(--brand-primary)]/30 hover:text-[var(--brand-primary)] transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.98] group"
+          >
+            <MoreHorizontal size={14} strokeWidth={2} className="transition-transform group-hover:rotate-90" />
             Explore Full History
           </button>
         </div>
