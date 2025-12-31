@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Transaction, TransactionType } from '../types';
 import { formatINR } from '../utils/currency';
+import { MerchantLogoComponent } from '../utils/merchantLogos';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
@@ -228,9 +229,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
               {/* Merchant Info */}
               <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/50 rounded-lg sm:rounded-xl flex items-center justify-center text-slate-700 shrink-0">
-                  <Building2 size={14} className="sm:w-5 sm:h-5" strokeWidth={2.5} />
-                </div>
+                <MerchantLogoComponent
+                  merchantName={transaction.merchant}
+                  category={transaction.category}
+                  size={40}
+                  className="shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-[8px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
                     Store

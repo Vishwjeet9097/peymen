@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType } from '../types';
 import { formatINR } from '../utils/currency';
+import { MerchantLogoComponent } from '../utils/merchantLogos';
 import { 
   ShoppingBag, 
   CreditCard, 
@@ -529,9 +530,12 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
               <div className="flex items-start justify-between gap-3">
                 {/* Left Section - Icon & Info */}
                 <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${t.type === 'DEBIT' ? 'bg-gradient-to-br from-indigo-50 to-indigo-100 text-indigo-600' : 'bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600'}`}>
-                    {t.type === 'DEBIT' ? <ShoppingBag size={20} strokeWidth={2.5} /> : <ArrowUpCircle size={20} strokeWidth={2.5} />}
-                  </div>
+                  <MerchantLogoComponent
+                    merchantName={t.merchant}
+                    category={t.category}
+                    size={48}
+                    className="shrink-0 shadow-sm"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-800 truncate mb-1.5 leading-tight">{t.merchant}</p>
                     <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -644,9 +648,12 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
                 >
                   <td className="px-6 md:px-8 py-5">
                     <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 ${t.type === 'DEBIT' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                        {t.type === 'DEBIT' ? <ShoppingBag size={18} /> : <ArrowDownCircle size={18} />}
-                      </div>
+                      <MerchantLogoComponent
+                        merchantName={t.merchant}
+                        category={t.category}
+                        size={40}
+                        className="shrink-0 transition-transform group-hover:scale-110"
+                      />
                       <div className="overflow-hidden">
                         <p className="text-sm font-bold text-slate-800 truncate">{t.merchant}</p>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate">{t.category}</p>

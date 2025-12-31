@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Transaction, SyncProgress, TransactionType } from '../types';
 import { formatINR } from '../utils/currency';
+import { MerchantLogoComponent } from '../utils/merchantLogos';
 import {
   // Cards & Payment
   CreditCard,
@@ -1637,9 +1638,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                   className="flex items-center justify-between p-4 bg-slate-50/50 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100 rounded-[1.5rem] group transition-all cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-110 ${t.type === 'DEBIT' ? 'bg-slate-900' : 'bg-emerald-500'}`}>
-                      {getCategoryIcon(t.category, 18)}
-                    </div>
+                    <MerchantLogoComponent
+                      merchantName={t.merchant}
+                      category={t.category}
+                      size={44}
+                      className="shadow-sm transition-transform group-hover:scale-110"
+                    />
                     <div>
                       <p className="text-xs font-black text-slate-800 leading-tight">{t.merchant}</p>
                       <div className="flex items-center gap-2 mt-1">
@@ -2340,9 +2344,12 @@ const Dashboard: React.FC<DashboardProps> = ({
             {recentActivity.length > 0 ? recentActivity.map((t, i) => (
               <div key={i} onClick={() => onTransactionClick?.(t)} className="flex items-center justify-between group cursor-pointer">
                 <div className="flex items-center gap-3 lg:gap-4 overflow-hidden">
-                  <div className="w-9 h-9 md:w-11 md:h-11 bg-slate-50 rounded-xl md:rounded-2xl flex items-center justify-center text-[var(--brand-primary)] transition-colors group-hover:bg-[var(--brand-primary)] group-hover:text-white shrink-0">
-                    {getCategoryIcon(t.category, 16)}
-                  </div>
+                  <MerchantLogoComponent
+                    merchantName={t.merchant}
+                    category={t.category}
+                    size={44}
+                    className="shrink-0 transition-transform group-hover:scale-105"
+                  />
                   <div className="overflow-hidden flex-1">
                     <p className="text-[10px] md:text-xs font-black text-slate-800 leading-tight truncate">{t.merchant}</p>
                     <div className="flex items-center gap-2">
@@ -2382,9 +2389,12 @@ const Dashboard: React.FC<DashboardProps> = ({
             {recentInflow.length > 0 ? recentInflow.map((t, i) => (
               <div key={i} onClick={() => onTransactionClick?.(t)} className="flex items-center justify-between group cursor-pointer">
                 <div className="flex items-center gap-3 lg:gap-4 overflow-hidden">
-                  <div className={`w-9 h-9 md:w-11 md:h-11 bg-gradient-to-br ${getNameGradient(t.merchant)} rounded-xl md:rounded-2xl flex items-center justify-center text-white font-black text-sm md:text-base shadow-sm shrink-0 transition-transform group-hover:scale-105`}>
-                    {getNameInitial(t.merchant)}
-                  </div>
+                  <MerchantLogoComponent
+                    merchantName={t.merchant}
+                    category={t.category}
+                    size={44}
+                    className="shrink-0 transition-transform group-hover:scale-105"
+                  />
                   <div className="overflow-hidden">
                     <p className="text-[10px] md:text-xs font-black text-slate-800 leading-tight truncate">{t.merchant}</p>
                     <p className="text-[8px] md:text-[10px] text-slate-400 font-bold uppercase tracking-tighter truncate">{t.source}</p>
