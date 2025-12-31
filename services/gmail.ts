@@ -758,6 +758,23 @@ Return JSON only:`;
       'cred': 'CRED',
       'phonepe': 'PhonePe',
       'paytm': 'Paytm',
+      'BEMINIMALIST':'BE MINIMALIST',
+      'nykaa':'Nykaa',
+      'Billdesk*Indian Railwa':'IRCTC',
+      'Indian Railwa':'IRCTC',
+      'Billdesk Indian Railwa':'IRCTC',
+      'Billdesk*Indian Railway':'IRCTC',
+      'Indian Railway':'IRCTC',
+      'Billdesk Indian Railway':'IRCTC',
+      'irctc':'IRCTC',
+      'NASEEMPERFUMESLLP':'NASEEM PERFUMES',
+      'MEESHO':'MEESHO',
+      'LIFESTYLEINTERNATION':'LIFE STYLE INTERNATIONAL',
+      'MINISO':'MINISO',
+      'Reliance Retail':'Reliance Retail',
+      'IKEAINDIAPVTLTD':'IKEA INDIA PVT LTD',
+      'AdobeSystemsSoftware':'Adobe',
+      'MyntraDesignsPvtLtd':'Myntra',
     };
 
     const lowerClean = clean.toLowerCase();

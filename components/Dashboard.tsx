@@ -160,6 +160,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showExpenseFilter, setShowExpenseFilter] = useState<boolean>(false);
   const [mobileSpendPeriod, setMobileSpendPeriod] = useState<'today' | '7days' | 'month'>('today');
 
+  // Enhanced filter states for card details drill-down view
+  const [cardDetailSearch, setCardDetailSearch] = useState<string>('');
+  const [cardDetailSortBy, setCardDetailSortBy] = useState<'date' | 'amount' | 'merchant' | 'category'>('date');
+  const [cardDetailSortOrder, setCardDetailSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [cardDetailFilterCategory, setCardDetailFilterCategory] = useState<string>('All');
+  const [cardDetailFilterType, setCardDetailFilterType] = useState<TransactionType | 'ALL'>('ALL');
+  const [cardDetailAmountRange, setCardDetailAmountRange] = useState<{ min: string; max: string }>({ min: '', max: '' });
+  const [cardDetailDateRange, setCardDetailDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [showCardDetailFilters, setShowCardDetailFilters] = useState<boolean>(false);
+
   // Extract last 4 digits from card/source string
   const extractLast4Digits = (source: string): string | null => {
     // Match patterns like ****1234 or ending with 4 digits
@@ -426,14 +436,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const primaryCard = cardInsights[0] || { totalSpent: 0, type: 'N/A' };
 
-  // Filtered transactions for the selected card and date
+  // Filtered transactions for the selected card and date with enhanced filtering
   const cardSpecificTransactions = useMemo(() => {
     if (!selectedCardSource) return [];
 
     // Find the card insight to get the card number
     const selectedCard = cardInsights.find(c => c.type === selectedCardSource);
 
-    return transactions.filter(t => {
+    let filteredTxns = transactions.filter(t => {
       const tDate = new Date(t.date);
       const matchesDate = tDate.getMonth() === selectedMonth &&
         tDate.getFullYear() === selectedYear;
@@ -469,8 +479,76 @@ const Dashboard: React.FC<DashboardProps> = ({
         // For non-card sources (Cash, etc.)
         return matchesDate && t.source === selectedCardSource;
       }
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, selectedCardSource, selectedMonth, selectedYear, cardInsights]);
+    });
+
+    // Apply enhanced filters for card details view
+    if (cardDetailSearch) {
+      const searchLower = cardDetailSearch.toLowerCase();
+      filteredTxns = filteredTxns.filter(t =>
+        t.merchant.toLowerCase().includes(searchLower) ||
+        t.source.toLowerCase().includes(searchLower) ||
+        t.category.toLowerCase().includes(searchLower) ||
+        t.rawSnippet.toLowerCase().includes(searchLower) ||
+        formatINR(t.amount).toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Filter by category
+    if (cardDetailFilterCategory !== 'All') {
+      filteredTxns = filteredTxns.filter(t => t.category === cardDetailFilterCategory);
+    }
+
+    // Filter by transaction type
+    if (cardDetailFilterType !== 'ALL') {
+      filteredTxns = filteredTxns.filter(t => t.type === cardDetailFilterType);
+    }
+
+    // Filter by amount range
+    if (cardDetailAmountRange.min || cardDetailAmountRange.max) {
+      filteredTxns = filteredTxns.filter(t => {
+        const amount = t.amount;
+        const min = cardDetailAmountRange.min ? parseFloat(cardDetailAmountRange.min) : 0;
+        const max = cardDetailAmountRange.max ? parseFloat(cardDetailAmountRange.max) : Infinity;
+        return amount >= min && amount <= max;
+      });
+    }
+
+    // Filter by date range
+    if (cardDetailDateRange.start || cardDetailDateRange.end) {
+      filteredTxns = filteredTxns.filter(t => {
+        const tDate = new Date(t.date);
+        const startDate = cardDetailDateRange.start ? new Date(cardDetailDateRange.start) : new Date('1900-01-01');
+        const endDate = cardDetailDateRange.end ? new Date(cardDetailDateRange.end) : new Date('2100-12-31');
+        return tDate >= startDate && tDate <= endDate;
+      });
+    }
+
+    // Apply sorting
+    return filteredTxns.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (cardDetailSortBy) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'amount':
+          comparison = a.amount - b.amount;
+          break;
+        case 'merchant':
+          comparison = a.merchant.localeCompare(b.merchant);
+          break;
+        case 'category':
+          comparison = a.category.localeCompare(b.category);
+          break;
+        default:
+          comparison = new Date(b.date).getTime() - new Date(a.date).getTime();
+      }
+      
+      return cardDetailSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [transactions, selectedCardSource, selectedMonth, selectedYear, cardInsights, 
+      cardDetailSearch, cardDetailSortBy, cardDetailSortOrder, cardDetailFilterCategory, 
+      cardDetailFilterType, cardDetailAmountRange, cardDetailDateRange]);
 
   // Filtered transactions for main view
   const filteredTransactions = useMemo(() => {
@@ -1021,6 +1099,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     setFilterCardNumber('All');
   };
 
+  const resetCardDetailFilters = () => {
+    setCardDetailSearch('');
+    setCardDetailSortBy('date');
+    setCardDetailSortOrder('desc');
+    setCardDetailFilterCategory('All');
+    setCardDetailFilterType('ALL');
+    setCardDetailAmountRange({ min: '', max: '' });
+    setCardDetailDateRange({ start: '', end: '' });
+  };
+
   // Render the Drill-Down View
   if (selectedCardSource) {
     const activeCard = cardInsights.find(c => c.type === selectedCardSource);
@@ -1294,9 +1382,10 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Transactions for this Card */}
+        {/* Enhanced Transactions Section with Advanced Filters */}
         <div className="glass-card p-6 md:p-8 space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-50 pb-6">
+          {/* Header with Search and Filter Toggle */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-50 pb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] rounded-xl flex items-center justify-center">
                 <Filter size={18} />
@@ -1306,16 +1395,239 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <p className="text-[9px] font-bold text-slate-400 uppercase">{selectedCardSource}</p>
               </div>
             </div>
-            <div className="relative hidden sm:block">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-              <input
-                type="text"
-                placeholder="Search Card History"
-                className="bg-slate-50 border-none text-[10px] font-bold py-2 pl-9 pr-4 rounded-xl w-48"
-              />
+            
+            {/* Search and Filter Controls */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Search Input */}
+              <div className="relative flex-1 sm:flex-none">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  type="text"
+                  placeholder="Search transactions..."
+                  value={cardDetailSearch}
+                  onChange={(e) => setCardDetailSearch(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-[10px] font-bold py-2.5 pl-9 pr-4 rounded-xl w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20 focus:border-[var(--brand-primary)] transition-all"
+                />
+              </div>
+              
+              {/* Filter Toggle Button */}
+              <button
+                onClick={() => setShowCardDetailFilters(!showCardDetailFilters)}
+                className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2 ${
+                  showCardDetailFilters 
+                    ? 'bg-[var(--brand-primary)] text-white shadow-lg shadow-[var(--brand-primary)]/20' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <SlidersHorizontal size={14} />
+                <span className="hidden sm:inline">Filters</span>
+              </button>
             </div>
           </div>
 
+          {/* Advanced Filters Panel */}
+          {showCardDetailFilters && (
+            <div className="bg-slate-50/50 rounded-2xl p-4 md:p-6 space-y-4 animate-slide-up border border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Advanced Filters</h4>
+                <button
+                  onClick={resetCardDetailFilters}
+                  className="text-[9px] font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  Reset All
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Sort By */}
+                <div className="space-y-2">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Sort By</label>
+                  <div className="flex gap-1">
+                    <select
+                      value={cardDetailSortBy}
+                      onChange={(e) => setCardDetailSortBy(e.target.value as 'date' | 'amount' | 'merchant' | 'category')}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                    >
+                      <option value="date">Date</option>
+                      <option value="amount">Amount</option>
+                      <option value="merchant">Merchant</option>
+                      <option value="category">Category</option>
+                    </select>
+                    <button
+                      onClick={() => setCardDetailSortOrder(cardDetailSortOrder === 'asc' ? 'desc' : 'asc')}
+                      className={`px-3 py-2 rounded-lg text-[10px] font-black transition-all ${
+                        cardDetailSortOrder === 'desc' 
+                          ? 'bg-[var(--brand-primary)] text-white' 
+                          : 'bg-white border border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {cardDetailSortOrder === 'desc' ? '↓' : '↑'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Category Filter */}
+                <div className="space-y-2">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Category</label>
+                  <select
+                    value={cardDetailFilterCategory}
+                    onChange={(e) => setCardDetailFilterCategory(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                  >
+                    {ALL_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Transaction Type Filter */}
+                <div className="space-y-2">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Type</label>
+                  <select
+                    value={cardDetailFilterType}
+                    onChange={(e) => setCardDetailFilterType(e.target.value as TransactionType | 'ALL')}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                  >
+                    <option value="ALL">All Types</option>
+                    <option value="DEBIT">Debit</option>
+                    <option value="CREDIT">Credit</option>
+                    <option value="TRANSFER">Transfer</option>
+                  </select>
+                </div>
+
+                {/* Amount Range */}
+                <div className="space-y-2">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Amount Range</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Min ₹"
+                      value={cardDetailAmountRange.min}
+                      onChange={(e) => setCardDetailAmountRange(prev => ({ ...prev, min: e.target.value }))}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max ₹"
+                      value={cardDetailAmountRange.max}
+                      onChange={(e) => setCardDetailAmountRange(prev => ({ ...prev, max: e.target.value }))}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Date Range */}
+                <div className="space-y-2">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Date Range</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={cardDetailDateRange.start}
+                      onChange={(e) => setCardDetailDateRange(prev => ({ ...prev, start: e.target.value }))}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                    />
+                    <input
+                      type="date"
+                      value={cardDetailDateRange.end}
+                      onChange={(e) => setCardDetailDateRange(prev => ({ ...prev, end: e.target.value }))}
+                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Filter Buttons */}
+                <div className="space-y-2 md:col-span-2 lg:col-span-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Quick Filters</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setCardDetailFilterType('DEBIT');
+                        setCardDetailSortBy('amount');
+                        setCardDetailSortOrder('desc');
+                      }}
+                      className="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all"
+                    >
+                      High Expenses
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCardDetailFilterType('CREDIT');
+                        setCardDetailSortBy('date');
+                        setCardDetailSortOrder('desc');
+                      }}
+                      className="px-3 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                    >
+                      Recent Income
+                    </button>
+                    <button
+                      onClick={() => {
+                        const today = new Date();
+                        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                        setCardDetailDateRange({
+                          start: weekAgo.toISOString().split('T')[0],
+                          end: today.toISOString().split('T')[0]
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-blue-100 transition-all"
+                    >
+                      Last 7 Days
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter Summary */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--brand-primary)]"></div>
+                  <span className="text-[9px] font-bold text-slate-600">
+                    Showing {cardSpecificTransactions.length} of {(() => {
+                      const selectedCard = cardInsights.find(c => c.type === selectedCardSource);
+                      return transactions.filter(tx => {
+                        const tDate = new Date(tx.date);
+                        const matchesDate = tDate.getMonth() === selectedMonth && tDate.getFullYear() === selectedYear;
+                        
+                        if (selectedCard && selectedCard.cardNumber) {
+                          const txCardNumber = getPrimaryCardNumber(tx.source);
+                          return matchesDate && txCardNumber === selectedCard.cardNumber;
+                        } else {
+                          if (selectedCardSource === 'Bank Transfer') {
+                            return matchesDate && isBankTransfer(tx.source);
+                          }
+                          if (selectedCardSource === 'Manual Entry') {
+                            return matchesDate && isManualEntry(tx.source);
+                          }
+                          if (selectedCardSource === 'Unidentified Payment') {
+                            const isUPI = isUPITransaction(tx.source);
+                            const cardNumber = getPrimaryCardNumber(tx.source);
+                            const isCard = cardNumber && !isUPI;
+                            const isBankTx = isBankTransfer(tx.source);
+                            const isManual = isManualEntry(tx.source);
+                            return matchesDate && !isUPI && !isCard && !isBankTx && !isManual;
+                          }
+                          if (selectedCardSource === 'UPI Payment') {
+                            const isUPI = isUPITransaction(tx.source);
+                            return matchesDate && isUPI;
+                          }
+                          return matchesDate && tx.source === selectedCardSource;
+                        }
+                      }).length;
+                    })()} transactions
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(cardDetailSearch || cardDetailFilterCategory !== 'All' || cardDetailFilterType !== 'ALL' || 
+                    cardDetailAmountRange.min || cardDetailAmountRange.max || cardDetailDateRange.start || cardDetailDateRange.end) && (
+                    <span className="px-2 py-1 bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] rounded-md text-[8px] font-black uppercase tracking-wider">
+                      Filtered
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Transaction List */}
           <div className="space-y-4">
             {cardSpecificTransactions.length > 0 ? (
               cardSpecificTransactions.map((t, i) => (
@@ -1330,9 +1642,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     <div>
                       <p className="text-xs font-black text-slate-800 leading-tight">{t.merchant}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                          {new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                        <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                          {t.category}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right flex items-center gap-4">
@@ -1340,7 +1658,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <p className={`text-xs font-black ${t.type === 'DEBIT' ? 'text-rose-500' : 'text-emerald-500'}`}>
                         {t.type === 'DEBIT' ? '-' : '+'}{formatINR(t.amount)}
                       </p>
-                      <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">{t.category}</p>
+                      <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
+                        {new Date(t.date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
                     <ChevronRight size={16} className="text-slate-200 group-hover:text-[var(--brand-accent)] transition-colors" />
                   </div>
@@ -1349,9 +1669,31 @@ const Dashboard: React.FC<DashboardProps> = ({
             ) : (
               <div className="py-20 text-center space-y-4">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200">
-                  <Clock size={32} />
+                  {cardDetailSearch || cardDetailFilterCategory !== 'All' || cardDetailFilterType !== 'ALL' || 
+                   cardDetailAmountRange.min || cardDetailAmountRange.max || cardDetailDateRange.start || cardDetailDateRange.end ? (
+                    <Search size={32} />
+                  ) : (
+                    <Clock size={32} />
+                  )}
                 </div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">No payments for this period</p>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                    {cardDetailSearch || cardDetailFilterCategory !== 'All' || cardDetailFilterType !== 'ALL' || 
+                     cardDetailAmountRange.min || cardDetailAmountRange.max || cardDetailDateRange.start || cardDetailDateRange.end
+                      ? 'No transactions match your filters'
+                      : 'No payments for this period'
+                    }
+                  </p>
+                  {(cardDetailSearch || cardDetailFilterCategory !== 'All' || cardDetailFilterType !== 'ALL' || 
+                    cardDetailAmountRange.min || cardDetailAmountRange.max || cardDetailDateRange.start || cardDetailDateRange.end) && (
+                    <button
+                      onClick={resetCardDetailFilters}
+                      className="mt-2 px-4 py-2 bg-[var(--brand-primary)] text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-all"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
