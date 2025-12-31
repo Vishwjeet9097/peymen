@@ -43,7 +43,7 @@ const testTransactions = [
 ];
 
 // Test functions (extracted from Dashboard.tsx logic)
-function isGmailSyncTransaction(source) {
+function isUnidentifiedTransaction(source) {
   const s = source.toLowerCase();
   return s.includes('gmail sync') || source === 'Unidentified Payment';
 }
@@ -60,10 +60,10 @@ function getCardholderName(source, brandName) {
 
 function getCardDesign(source) {
   const s = source.toLowerCase();
-  const isGmailSync = s.includes('gmail sync') || source === 'Unidentified Payment';
+  const isUnidentified = s.includes('gmail sync') || source === 'Unidentified Payment';
   
   // Unidentified Payments Card Design - Professional Grey gradient
-  if (isGmailSync) {
+  if (isUnidentified) {
     return {
       bg: 'bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800',
       accent: 'from-slate-400/20 to-slate-500/20',
@@ -87,15 +87,15 @@ function getCardDesign(source) {
 }
 
 function getCardDisplayInfo(source) {
-  const isGmailSync = isGmailSyncTransaction(source);
+  const isUnidentified = isUnidentifiedTransaction(source);
   
   return {
-    isUnidentified: isGmailSync,
+    isUnidentified: isUnidentified,
     cardholderName: getCardholderName(source, ''),
     cardDesign: getCardDesign(source),
-    displayType: isGmailSync ? 'OTHER' : 'CARD',
-    subtitle: isGmailSync ? 'Miscellaneous' : 'Credit Card',
-    label: isGmailSync ? 'Payment Type' : 'Cardholder'
+    displayType: isUnidentified ? 'OTHER' : 'CARD',
+    subtitle: isUnidentified ? 'Miscellaneous' : 'Credit Card',
+    label: isUnidentified ? 'Payment Type' : 'Cardholder'
   };
 }
 

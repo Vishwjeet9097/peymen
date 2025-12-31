@@ -132,7 +132,7 @@ export class GmailService {
     return response.json();
   }
 
-  async listMessages(maxResults = 50, q = 'subject:(transaction OR debit OR credit OR payment OR confirmed OR receipt OR "spent on" OR "charged" OR "UPI txn" OR "done a UPI" OR debited OR credited) OR from:(alerts@hdfcbank.net OR alerts@sbi.co.in OR alerts@icicibank.com OR alerts@axisbank.com)') {
+  async listMessages(maxResults = 50, q = 'subject:(transaction OR debit OR credit OR payment OR confirmed OR receipt OR "spent on" OR "charged" OR "UPI txn" OR "done a UPI" OR debited OR credited) OR from:(alerts@hdfcbank.net OR alerts@sbi.co.in OR alerts@icicibank.com OR alerts@axisbank.com OR credit_cards@icicibank.com OR onlinesbicard@sbicard.com OR alerts@axis.bank.in OR nps-communications@mailer.proteantech.in)') {
     // Validate Gmail scope before making API calls
     await this.validateGmailScope();
     

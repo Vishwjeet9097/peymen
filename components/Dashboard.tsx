@@ -290,12 +290,41 @@ const Dashboard: React.FC<DashboardProps> = ({
     return 'Bank';
   };
 
+  // Check if transaction is a bank transfer
+  const isBankTransfer = (source: string): boolean => {
+    const s = source.toLowerCase();
+    return s.includes('neft') || s.includes('imps') || s.includes('rtgs') || 
+           s.includes('bank transfer') || s.includes('wire transfer') ||
+           s.includes('bank neft') || s.includes('bank imps') || s.includes('bank rtgs');
+  };
+
+  // Check if transaction is a manual entry
+  const isManualEntry = (source: string): boolean => {
+    const s = source.toLowerCase();
+    return s.includes('manual entry') || s.includes('manual') || 
+           s.includes('manually added') || s.includes('user entry') ||
+           source === 'Manual Entry';
+  };
+
+  // Check if transaction should be treated as unidentified payment
+  const isUnidentifiedPayment = (source: string): boolean => {
+    const isUPI = isUPITransaction(source);
+    const cardNumber = getPrimaryCardNumber(source);
+    const isCard = cardNumber && !isUPI;
+    
+    // If it's not UPI and not a card, it's unidentified
+    return !isUPI && !isCard;
+  };
+
   // Check if source is UPI transaction
   const isUPITransaction = (source: string): boolean => {
     const s = source.toLowerCase();
-    return s.includes('upi') || s.includes('vpa') || s.includes('phonepe') || 
-           s.includes('googlepay') || s.includes('gpay') || s.includes('paytm') || 
-           s.includes('bhim') || s.includes('amazonpay');
+    // More specific UPI detection - must contain "upi" or specific UPI app patterns
+    return s.includes('upi') || s.includes('vpa') || 
+           s.includes('phonepe upi') || s.includes('googlepay') || s.includes('gpay') || 
+           s.includes('paytm upi') || s.includes('bhim') || s.includes('amazonpay upi') ||
+           // UPI domain patterns
+           /@(ok|axis|icici|paytm|ybl|hdfcbank|sbi|kotak|axl|oksbi|okicici|pz|superyes|okhdfcbank|okhdfc|okaxis|okkotak|okyes|okindusind|okpnb|okbob|okcanara|okfederal|okrbl|okbandhan|okciti|okhsbc|oksc|okdbs)\b/.test(s);
   };
 
   // Group spending by Card Number (not by source string to avoid duplicates)
@@ -347,19 +376,27 @@ const Dashboard: React.FC<DashboardProps> = ({
             cards[cardNumber].lastUsed = t.date;
           }
         } else {
-          // For non-card transactions (UPI, Cash, etc.)
+          // For non-card transactions (UPI, Bank Transfers, Manual Entry, etc.)
           const source = t.source || 'Other';
           
-          // Group ALL UPI transactions into a single card
+          // Professional 5-tier classification system
           let cardKey = source;
           let brandName = source;
           
           if (isUPI) {
-            // Use a common key for all UPI transactions
+            // Group 1: UPI Payment - All UPI transactions
             cardKey = 'UPI_PAYMENT';
             brandName = 'UPI Payment';
-          } else if (source.toLowerCase().includes('gmail sync')) {
-            // Group ALL unidentified transactions into a single card
+          } else if (isBankTransfer(source)) {
+            // Group 2: Bank Transfer - NEFT, IMPS, RTGS
+            cardKey = 'BANK_TRANSFER';
+            brandName = 'Bank Transfer';
+          } else if (isManualEntry(source)) {
+            // Group 3: Manual Entry - Manual transactions
+            cardKey = 'MANUAL_ENTRY';
+            brandName = 'Manual Entry';
+          } else {
+            // Group 4: Unidentified Payment - Everything else
             cardKey = 'UNIDENTIFIED_PAYMENT';
             brandName = 'Unidentified Payment';
           }
@@ -369,8 +406,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               totalSpent: 0,
               count: 0,
               lastUsed: t.date,
-              type: isUPI ? 'UPI Payment' : (cardKey === 'UNIDENTIFIED_PAYMENT' ? 'Unidentified Payment' : source),
-              cardNumber: '', // No card number for UPI/Unidentified payments
+              type: brandName,
+              cardNumber: '', // No card number for non-card payments
               brandName: brandName
             };
           }
@@ -406,10 +443,23 @@ const Dashboard: React.FC<DashboardProps> = ({
         const txCardNumber = getPrimaryCardNumber(t.source);
         return matchesDate && txCardNumber === selectedCard.cardNumber;
       } else {
-        // For Unidentified Payment, match all unidentified transactions (including Auto Pay, Failed)
+        // For Bank Transfer, match all bank transfer transactions
+        if (selectedCardSource === 'Bank Transfer') {
+          return matchesDate && isBankTransfer(t.source);
+        }
+        // For Manual Entry, match all manual entry transactions
+        if (selectedCardSource === 'Manual Entry') {
+          return matchesDate && isManualEntry(t.source);
+        }
+        // For Unidentified Payment, match remaining unidentified transactions
         if (selectedCardSource === 'Unidentified Payment') {
-          const source = (t.source || '').toLowerCase();
-          return matchesDate && source.includes('gmail sync');
+          const isUPI = isUPITransaction(t.source);
+          const cardNumber = getPrimaryCardNumber(t.source);
+          const isCard = cardNumber && !isUPI;
+          const isBankTx = isBankTransfer(t.source);
+          const isManual = isManualEntry(t.source);
+          // Match transactions that are NOT UPI, NOT cards, NOT bank transfers, NOT manual entries
+          return matchesDate && !isUPI && !isCard && !isBankTx && !isManual;
         }
         // For UPI transactions, match all UPI sources when "UPI Payment" is selected
         if (selectedCardSource === 'UPI Payment') {
@@ -665,8 +715,18 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Get display name for cardholder/payment method
   const getCardholderName = (source: string, brandName: string): string => {
+    // Handle bank transfers - return professional term
+    if (isBankTransfer(source) || source === 'Bank Transfer') {
+      return 'Bank Transfer';
+    }
+    
+    // Handle manual entries - return professional term
+    if (isManualEntry(source) || source === 'Manual Entry') {
+      return 'Manual Entry';
+    }
+    
     // Handle unidentified payments - return professional term
-    if (source.toLowerCase().includes('gmail sync')) {
+    if (isUnidentifiedPayment(source) || source === 'Unidentified Payment') {
       return 'Unidentified Payment';
     }
     
@@ -760,15 +820,45 @@ const Dashboard: React.FC<DashboardProps> = ({
     return 'Credit Card';
   };
 
-  // Get professional card design based on bank
+  // Get professional card design based on payment type
   const getCardDesign = (source: string, index: number) => {
     const bankName = getBankName(source);
     const s = source.toLowerCase();
     const isUPI = isUPITransaction(source) || source === 'UPI Payment';
-    const isGmailSync = s.includes('gmail sync') || source === 'Unidentified Payment';
+    const isBankTx = isBankTransfer(source) || source === 'Bank Transfer';
+    const isManual = isManualEntry(source) || source === 'Manual Entry';
+    const isUnidentified = isUnidentifiedPayment(source) || source === 'Unidentified Payment';
+
+    // Bank Transfer Card Design - Professional Blue/Green gradient
+    if (isBankTx) {
+      return {
+        bg: 'bg-gradient-to-br from-blue-600 via-teal-600 to-blue-800',
+        accent: 'from-blue-400/20 to-teal-400/20',
+        text: 'text-white',
+        logo: 'BANK',
+        chip: 'bg-yellow-400',
+        network: 'TRANSFER',
+        gold: false,
+        pattern: null
+      };
+    }
+
+    // Manual Entry Card Design - Professional Green gradient
+    if (isManual) {
+      return {
+        bg: 'bg-gradient-to-br from-emerald-600 via-green-600 to-emerald-800',
+        accent: 'from-emerald-400/20 to-green-400/20',
+        text: 'text-white',
+        logo: 'MANUAL',
+        chip: 'bg-yellow-400',
+        network: 'ENTRY',
+        gold: false,
+        pattern: null
+      };
+    }
 
     // Unidentified Payments Card Design - Professional Grey gradient
-    if (isGmailSync) {
+    if (isUnidentified) {
       return {
         bg: 'bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800',
         accent: 'from-slate-400/20 to-slate-500/20',
@@ -955,33 +1045,205 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Focused Card Detail Stats */}
+        {/* Focused Card Detail Stats with Visual Card */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-1 glass-card p-6 bg-slate-900 text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <CreditCard size={100} strokeWidth={1} />
-            </div>
-            <div className="relative z-10 space-y-4">
-              <div>
-                <p className="text-[8px] font-black uppercase tracking-[0.2em] opacity-60">Card Details</p>
-                <h4 className="text-xl font-black">{activeCard?.brandName || selectedCardSource}</h4>
-                {activeCard?.cardNumber && (
-                  <p className="text-sm font-bold mt-1">****{activeCard.cardNumber}</p>
-                )}
-              </div>
-              <div>
-                <p className="text-[8px] font-black uppercase tracking-[0.2em] opacity-60">
-                  {months[selectedMonth]} {selectedYear} Spend
-                </p>
-                <h4 className="text-3xl font-black">{formatINR(monthlyTotal)}</h4>
-              </div>
-              {activeCard && (
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.2em] opacity-60">Total Payments</p>
-                  <h4 className="text-xl font-black">{activeCard.count}</h4>
+          {/* Visual Credit Card Representation */}
+          <div className="md:col-span-1">
+            {(() => {
+              const cardDesign = getCardDesign(selectedCardSource, 0);
+              const bankName = getBankName(selectedCardSource);
+              const cardNetwork = getCardNetwork(selectedCardSource);
+              const isUPI = isUPITransaction(selectedCardSource) || selectedCardSource === 'UPI Payment';
+              const isBankTx = isBankTransfer(selectedCardSource) || selectedCardSource === 'Bank Transfer';
+              const isManual = isManualEntry(selectedCardSource) || selectedCardSource === 'Manual Entry';
+              const isUnidentified = isUnidentifiedPayment(selectedCardSource) || selectedCardSource === 'Unidentified Payment';
+              
+              let finalBrandName = activeCard?.brandName || selectedCardSource;
+              let cardholderName = getCardholderName(selectedCardSource, finalBrandName);
+              
+              if (isUPI) {
+                finalBrandName = 'UPI Payment';
+                cardholderName = 'UPI Payment';
+              } else if (isBankTx) {
+                finalBrandName = 'Bank Transfer';
+                cardholderName = 'Bank Transfer';
+              } else if (isManual) {
+                finalBrandName = 'Manual Entry';
+                cardholderName = 'Manual Entry';
+              } else if (isUnidentified) {
+                finalBrandName = 'Unidentified Payment';
+                cardholderName = 'Unidentified Payment';
+              }
+
+              return (
+                <div className={`rounded-2xl md:rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-2xl aspect-[1.586/1] ${cardDesign.bg}`}>
+                  {/* Decorative Background Elements */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${cardDesign.accent} opacity-50`} />
+                  {cardDesign.pattern && <div className={cardDesign.pattern} />}
+                  
+                  {/* Card Content */}
+                  <div className="relative z-10 h-full flex flex-col justify-between">
+                    {/* Top Section - Bank Logo & Contactless */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className={`px-3 py-1.5 rounded-lg ${cardDesign.gold ? 'bg-yellow-400/20 border border-yellow-400/30' : 'bg-white/10 backdrop-blur-sm'}`}>
+                          <p className={`text-[10px] font-black uppercase tracking-wider ${cardDesign.text}`}>
+                            {isUPI ? 'UPI Payment' : isBankTx ? 'BANK' : isManual ? 'MANUAL' : isUnidentified ? 'OTHER' : bankName}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Contactless Symbol */}
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 rounded-full bg-white/5 backdrop-blur-sm border border-white/10 flex items-center justify-center">
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3].map(i => (
+                              <div key={i} className="w-0.5 h-2.5 bg-white/40 rounded-full" style={{ height: `${1.5 + i * 0.3}px` }} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle Section - Card Number & Chip */}
+                    <div className="flex-1 flex flex-col justify-center space-y-4">
+                      {/* EMV Chip */}
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 ${cardDesign.chip} rounded-lg flex items-center justify-center shadow-lg`}>
+                          <div className="w-7 h-7 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-sm flex items-center justify-center">
+                            <div className="grid grid-cols-4 gap-0.5 w-4 h-4">
+                              {Array.from({ length: 16 }).map((_, i) => (
+                                <div key={i} className="w-0.5 h-0.5 bg-slate-800 rounded-full" />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Number */}
+                      <div className="space-y-1">
+                        {isUPI ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-14 h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Wallet size={28} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-xl font-black tracking-wider">UPI</p>
+                              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Unified Payments
+                              </p>
+                            </div>
+                          </div>
+                        ) : isBankTx ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-14 h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Banknote size={28} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-xl font-black tracking-wider">BANK</p>
+                              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Wire Transfer
+                              </p>
+                            </div>
+                          </div>
+                        ) : isManual ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-14 h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Plus size={28} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-xl font-black tracking-wider">MANUAL</p>
+                              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                User Entry
+                              </p>
+                            </div>
+                          </div>
+                        ) : isUnidentified ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-14 h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <CircleDollarSign size={28} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-xl font-black tracking-wider">OTHER</p>
+                              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Miscellaneous
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              {[1, 2, 3].map(i => (
+                                <span key={i} className="text-base font-mono tracking-widest">••••</span>
+                              ))}
+                              <span className="text-base font-mono font-black tracking-widest">
+                                {activeCard?.cardNumber || '****'}
+                              </span>
+                            </div>
+                            {activeCard?.cardNumber && (
+                              <p className="text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                {finalBrandName || getCardBrand(selectedCardSource)}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bottom Section - Cardholder, Valid Thru, Network */}
+                    <div className="flex items-end justify-between">
+                      <div className="flex-1">
+                        <p className="text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">
+                          {isUPI ? 'Payment Method' : isBankTx ? 'Transfer Type' : isManual ? 'Entry Type' : isUnidentified ? 'Payment Type' : 'Cardholder'}
+                        </p>
+                        <p className="text-sm font-black uppercase tracking-wider truncate">
+                          {cardholderName}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-end gap-4">
+                        {!isUPI && (
+                          <div className="text-right">
+                            <p className="text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">
+                              Valid Thru
+                            </p>
+                            <p className="text-xs font-black">••/••</p>
+                          </div>
+                        )}
+                        
+                        {/* Network Logo */}
+                        <div className={`px-2 py-1.5 rounded-md ${cardDesign.gold ? 'bg-yellow-400/20 border border-yellow-400/30' : 'bg-white/10 backdrop-blur-sm'}`}>
+                          <p className={`text-[9px] font-black uppercase tracking-wider ${cardDesign.text}`}>
+                            {cardNetwork}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Monthly Spend - Professional Display */}
+                    <div className="absolute top-4 right-4 text-right">
+                      <p className="text-[8px] font-bold text-white/70 uppercase tracking-widest mb-0.5">
+                        Monthly Spent
+                      </p>
+                      <p className="text-base font-black leading-tight">
+                        {formatINR(Math.abs(monthlyTotal))}
+                      </p>
+                      <p className="text-[8px] font-bold text-white/60 mt-0.5">
+                        {cardSpecificTransactions.length} {cardSpecificTransactions.length === 1 ? 'payment' : 'payments'}
+                      </p>
+                    </div>
+
+                    {/* Indian Rupee Watermark */}
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-10">
+                      <IndianRupee 
+                        size={120} 
+                        strokeWidth={1.5}
+                        className="text-white"
+                      />
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           <div className="md:col-span-2 glass-card p-6 flex flex-col justify-between">
@@ -1397,11 +1659,27 @@ const Dashboard: React.FC<DashboardProps> = ({
               const bankName = getBankName(card.type);
               const cardNetwork = getCardNetwork(card.type);
               const isUPI = isUPITransaction(card.type) || card.type === 'UPI Payment';
-              const isGmailSync = card.type === 'Unidentified Payment' || card.type.toLowerCase().includes('gmail sync');
-              // For unified UPI card, use "UPI Payment" as brand name
-              // For Unidentified Payment, use "Unidentified Payment" as brand name
-              const finalBrandName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Unidentified Payment' : card.brandName);
-              const cardholderName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Unidentified Payment' : getCardholderName(card.type, finalBrandName));
+              const isBankTx = isBankTransfer(card.type) || card.type === 'Bank Transfer';
+              const isManual = isManualEntry(card.type) || card.type === 'Manual Entry';
+              const isUnidentified = isUnidentifiedPayment(card.type) || card.type === 'Unidentified Payment';
+              
+              // Determine final brand name and cardholder name based on card type
+              let finalBrandName = card.brandName;
+              let cardholderName = getCardholderName(card.type, finalBrandName);
+              
+              if (isUPI) {
+                finalBrandName = 'UPI Payment';
+                cardholderName = 'UPI Payment';
+              } else if (isBankTx) {
+                finalBrandName = 'Bank Transfer';
+                cardholderName = 'Bank Transfer';
+              } else if (isManual) {
+                finalBrandName = 'Manual Entry';
+                cardholderName = 'Manual Entry';
+              } else if (isUnidentified) {
+                finalBrandName = 'Unidentified Payment';
+                cardholderName = 'Unidentified Payment';
+              }
               
               // Create unique key combining type, cardNumber, and index to avoid duplicates
               const uniqueKey = `${card.type}-${card.cardNumber || 'no-card'}-${idx}`;
@@ -1423,7 +1701,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-center gap-2">
                         <div className={`px-2.5 py-1 rounded-lg ${cardDesign.gold ? 'bg-yellow-400/20 border border-yellow-400/30' : 'bg-white/10 backdrop-blur-sm'}`}>
                           <p className={`text-[9px] md:text-[10px] font-black uppercase tracking-wider ${cardDesign.text}`}>
-                            {isUPI ? 'UPI Payment' : (isGmailSync ? 'GMAIL' : bankName)}
+                            {isUPI ? 'UPI Payment' : isBankTx ? 'BANK' : isManual ? 'MANUAL' : isUnidentified ? 'OTHER' : bankName}
                           </p>
                         </div>
                       </div>
@@ -1469,7 +1747,33 @@ const Dashboard: React.FC<DashboardProps> = ({
                               </p>
                             </div>
                           </div>
-                        ) : isGmailSync ? (
+                        ) : isBankTx ? (
+                          // Bank Transfer - Show professional bank transfer icon
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Banknote size={24} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-lg md:text-xl font-black tracking-wider">BANK</p>
+                              <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Wire Transfer
+                              </p>
+                            </div>
+                          </div>
+                        ) : isManual ? (
+                          // Manual Entry - Show professional manual entry icon
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <Plus size={24} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-lg md:text-xl font-black tracking-wider">MANUAL</p>
+                              <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                User Entry
+                              </p>
+                            </div>
+                          </div>
+                        ) : isUnidentified ? (
                           // Unidentified Payment - Show professional misc payment icon
                           <div className="flex items-center gap-2">
                             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
@@ -1507,7 +1811,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <div className="flex items-end justify-between">
                       <div className="flex-1">
                         <p className="text-[7px] md:text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">
-                          {isUPI ? 'Payment Method' : isGmailSync ? 'Payment Type' : 'Cardholder'}
+                          {isUPI ? 'Payment Method' : isBankTx ? 'Transfer Type' : isManual ? 'Entry Type' : isUnidentified ? 'Payment Type' : 'Cardholder'}
                         </p>
                         <p className="text-xs md:text-sm font-black uppercase tracking-wider truncate">
                           {cardholderName}
