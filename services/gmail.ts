@@ -14,22 +14,93 @@ export class GmailService {
   }
 
   /**
+   * Validates if the current token has Gmail scope by making a test API call
+   */
+  private async validateGmailScope(): Promise<void> {
+    try {
+      // Make a minimal API call to check if Gmail scope is available
+      const response = await fetch(`${GMAIL_API_BASE}/profile`, {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+        },
+      });
+
+      if (response.status === 403) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData?.error?.message?.includes('insufficient authentication scopes') || 
+            errorData?.error?.details?.[0]?.reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') {
+          throw new Error('GMAIL_SCOPE_INSUFFICIENT: Your login session doesn\'t have Gmail read permissions. Please logout and login again to grant Gmail access.');
+        }
+      }
+      
+      if (!response.ok) {
+        throw new Error(`Gmail scope validation failed: ${response.status}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('GMAIL_SCOPE_INSUFFICIENT')) {
+        throw error;
+      }
+      // If it's a network error or other issue, don't block the operation
+      console.warn('Gmail scope validation failed, proceeding anyway:', error);
+    }
+  }
+
+  /**
    * Gets the API key with priority: .env.local > App Settings
    * @returns API key string or null
    */
   private getApiKey(): string | null {
     // Priority 1: Environment variable (.env.local) - safely access for Vite/TS
     const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? (process as any).env?.API_KEY : null);
-    if (envKey) {
+    if (envKey && envKey !== 'your_new_gemini_api_key_here' && envKey !== 'your_gemini_api_key_here') {
+      // Check if it's a known leaked key
+      if (this.isLeakedApiKey(envKey)) {
+        console.error('🚨 SECURITY ALERT: Environment API key is on the leaked keys blacklist!');
+        return null;
+      }
       return envKey;
     }
 
     // Priority 2: App settings (localStorage)
     if (this.appApiKey) {
+      // Check if it's a known leaked key
+      if (this.isLeakedApiKey(this.appApiKey)) {
+        console.error('🚨 SECURITY ALERT: App API key is on the leaked keys blacklist!');
+        // Auto-cleanup leaked key from localStorage
+        this.cleanupLeakedApiKey();
+        return null;
+      }
       return this.appApiKey;
     }
 
     return null;
+  }
+
+  /**
+   * Checks if an API key is on the known leaked keys blacklist
+   */
+  private isLeakedApiKey(apiKey: string): boolean {
+    const leakedKeys = [
+      'AIzaSyAN1gbmoj37LUE0Wcrw3Km4c4MZuSrDaxs', // Reported as leaked in console logs
+      'AIzaSyDCNNhW1--jdGKdAUpK_6BBkADIjs_jtPo'  // Previous leaked key from .env
+    ];
+    
+    return leakedKeys.includes(apiKey);
+  }
+
+  /**
+   * Cleans up leaked API keys from localStorage
+   */
+  private cleanupLeakedApiKey(): void {
+    console.log('🧹 Cleaning up leaked API key from storage...');
+    localStorage.removeItem('qpay_gemini_key');
+    localStorage.removeItem('qpay_gemini_key_encrypted');
+    this.appApiKey = null;
+    
+    // Show user notification about the cleanup
+    if (typeof window !== 'undefined' && (window as any).showLeakedKeyNotification) {
+      (window as any).showLeakedKeyNotification();
+    }
   }
 
   private async fetchGmail(endpoint: string, options: RequestInit = {}) {
@@ -48,7 +119,7 @@ export class GmailService {
         // Check if it's a scope issue
         if (errorData?.error?.message?.includes('insufficient authentication scopes') || 
             errorData?.error?.details?.[0]?.reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') {
-          throw new Error('GMAIL_SCOPE_INSUFFICIENT: Please logout and login again to grant Gmail access permissions.');
+          throw new Error('GMAIL_SCOPE_INSUFFICIENT: Your login session doesn\'t have Gmail read permissions. Please logout and login again to grant Gmail access.');
         }
         throw new Error('GMAIL_PERMISSION_DENIED: Gmail access is restricted. Please ensure you have added your email to Test Users in Google Cloud Console.');
       }
@@ -62,6 +133,9 @@ export class GmailService {
   }
 
   async listMessages(maxResults = 50, q = 'subject:(transaction OR debit OR credit OR payment OR confirmed OR receipt OR "spent on" OR "charged" OR "UPI txn" OR "done a UPI" OR debited OR credited) OR from:(alerts@hdfcbank.net OR alerts@sbi.co.in OR alerts@icicibank.com OR alerts@axisbank.com)') {
+    // Validate Gmail scope before making API calls
+    await this.validateGmailScope();
+    
     const data = await this.fetchGmail(`/messages?maxResults=${maxResults}&q=${encodeURIComponent(q)}`);
     return data.messages || [];
   }
@@ -111,8 +185,21 @@ Body: "${body}"
 **CRITICAL INSTRUCTIONS:**
 - Return ONLY a valid JSON array, no other text
 - Array should have exactly ${messages.length} objects, one for each email in order
-- **IGNORE promotional/marketing emails** that do NOT contain these keywords: credit, debit, failed, upi, subscription, bank transaction, payment, transaction, scheduled, auto-payment, spent, charged, receipt, confirmed
-- If email is promotional (e.g., "bill payment is due", "earn cashback", "offer", "discount" without actual transaction), use: {"isTransaction": false, "emailIndex": N}
+- **STRICTLY IGNORE promotional/marketing emails** including:
+  * Credit card offers, eligibility notifications, pre-approved offers
+  * Loan offers and investment opportunities  
+  * "We wanted to share an update regarding your credit card profile"
+  * "Based on your profile, you may be eligible for"
+  * Any email about credit limits, loan amounts, or offers with "up to ₹X"
+  * Insurance, mutual fund, or account opening offers
+  * Newsletters, marketing content, or unsubscribe emails
+- **ONLY EXTRACT actual financial transactions** with these indicators:
+  * Money actually spent: "Rs.X spent on", "Rs.X charged", "Rs.X debited"
+  * Money actually received: "Rs.X credited", "Rs.X received", "Rs.X refunded"
+  * UPI transactions: "UPI transaction", "VPA transfer", "UPI payment"
+  * Card transactions: "Card transaction at [merchant]", "Payment successful"
+  * Bank transfers: "NEFT/IMPS/RTGS transfer", "Transfer completed"
+- If email is promotional/marketing (even if it contains words like "credit", "debit"), use: {"isTransaction": false, "emailIndex": N}
 - **EXTRACT scheduled auto-payments**: "Auto-payment of ₹X is scheduled on [date]" → Extract with type: "SCHEDULED"
 - **EXTRACT failed auto-payments**: "Auto-payment of ₹X failed" → Extract with type: "FAILED"
 - For valid transactions, extract these fields:
@@ -376,8 +463,21 @@ Return JSON array only (e.g., [{"emailIndex": 1, "amount": 100, ...}, {"emailInd
 
 **CRITICAL INSTRUCTIONS:**
 - Return ONLY a valid JSON object, no other text
-- **IGNORE promotional/marketing emails** that do NOT contain these keywords: credit, debit, failed, upi, subscription, bank transaction, payment, transaction, scheduled, auto-payment, spent, charged, receipt, confirmed
-- If email is promotional (e.g., "bill payment is due", "earn cashback", "offer", "discount" without actual transaction), return: {"isTransaction": false}
+- **STRICTLY IGNORE promotional/marketing emails** including:
+  * Credit card offers, eligibility notifications, pre-approved offers
+  * Loan offers and investment opportunities  
+  * "We wanted to share an update regarding your credit card profile"
+  * "Based on your profile, you may be eligible for"
+  * Any email about credit limits, loan amounts, or offers with "up to ₹X"
+  * Insurance, mutual fund, or account opening offers
+  * Newsletters, marketing content, or unsubscribe emails
+- **ONLY EXTRACT actual financial transactions** with these indicators:
+  * Money actually spent: "Rs.X spent on", "Rs.X charged", "Rs.X debited"
+  * Money actually received: "Rs.X credited", "Rs.X received", "Rs.X refunded"
+  * UPI transactions: "UPI transaction", "VPA transfer", "UPI payment"
+  * Card transactions: "Card transaction at [merchant]", "Payment successful"
+  * Bank transfers: "NEFT/IMPS/RTGS transfer", "Transfer completed"
+- If email is promotional/marketing (even if it contains words like "credit", "debit"), return: {"isTransaction": false}
 - **EXTRACT scheduled auto-payments**: "Auto-payment of ₹X is scheduled on [date]" → Extract with type: "SCHEDULED"
   - For merchant: Extract service name (e.g., "Subscribe & Save", "Netflix", "Amazon Prime") from the email
   - Example: "Auto-payment of ₹170.05 for your Subscribe & Save orders" → merchant: "Subscribe & Save" or "Amazon Subscribe & Save"
@@ -716,30 +816,100 @@ Return JSON only:`;
     }
     
     if (hints.isCard) {
-      // Improved pattern to match "SBI Credit Card ending 6103" or "Credit Card ending 6103"
-      const cardMatch = text.match(/(?:your\s+)?(hdfc|sbi|icici|axis|kotak|citibank|amex|american express)?\s*(?:bank\s+)?(?:credit|debit|visa|master|mastercard|rupay)?\s*(?:card)?\s*(?:ending|ending in|ending with|no\.?|number)?\s*(\d{4})/i);
-      if (cardMatch) {
-        const bank = cardMatch[1] ? cardMatch[1].toUpperCase() : '';
-        const last4 = cardMatch[2];
-        // Extract card type from text
-        let cardType = 'Card';
-        if (lower.includes('credit')) cardType = 'Credit';
-        else if (lower.includes('debit')) cardType = 'Debit';
-        else if (lower.includes('visa')) cardType = 'Visa';
-        else if (lower.includes('mastercard') || lower.includes('master')) cardType = 'Mastercard';
-        else if (lower.includes('rupay')) cardType = 'RuPay';
-        else if (lower.includes('amex') || lower.includes('american express')) cardType = 'Amex';
-        
-        if (bank) {
-          return `${bank} ${cardType} ****${last4}`;
-        } else {
-          return `${cardType} Card ****${last4}`;
+      // ENHANCED CARD NUMBER EXTRACTION - Fixed patterns to avoid amount/year confusion
+      let cardNumber = null;
+      let bankName = '';
+      let cardType = 'Card';
+      
+      // Pattern 1: "Credit Card ending 6103" or "Card ending 6103" - MOST SPECIFIC
+      const endingPattern = text.match(/(?:credit|debit)?\s*card\s+ending\s+(\d{4})/i);
+      if (endingPattern) {
+        const possibleCard = endingPattern[1];
+        // Validate it's not a year (2020-2030) or common amount patterns
+        if (this.isValidCardNumber(possibleCard) && !this.isLikelyAmount(text, possibleCard)) {
+          cardNumber = possibleCard;
         }
       }
+      
+      // Pattern 2: "SBI Credit Card ending 6103" - extract bank and card number
+      if (!cardNumber) {
+        const bankCardPattern = text.match(/(hdfc|sbi|icici|axis|kotak|citibank|amex|american express)\s+(?:bank\s+)?(?:credit|debit)?\s*card\s+ending\s+(\d{4})/i);
+        if (bankCardPattern) {
+          const possibleCard = bankCardPattern[2];
+          if (this.isValidCardNumber(possibleCard) && !this.isLikelyAmount(text, possibleCard)) {
+            bankName = bankCardPattern[1].toUpperCase();
+            cardNumber = possibleCard;
+          }
+        }
+      }
+      
+      // Pattern 3: "your SBI Credit Card ending 6103"
+      if (!cardNumber) {
+        const yourCardPattern = text.match(/your\s+(hdfc|sbi|icici|axis|kotak|citibank|amex|american express)?\s*(?:bank\s+)?(?:credit|debit)?\s*card\s+ending\s+(\d{4})/i);
+        if (yourCardPattern) {
+          const possibleCard = yourCardPattern[2];
+          if (this.isValidCardNumber(possibleCard) && !this.isLikelyAmount(text, possibleCard)) {
+            if (yourCardPattern[1]) bankName = yourCardPattern[1].toUpperCase();
+            cardNumber = possibleCard;
+          }
+        }
+      }
+      
+      // Pattern 4: "Credit Card No. XX4167" or "Card No. 4167" - AVOID AMOUNTS
+      if (!cardNumber) {
+        const cardNoPattern = text.match(/(?:credit|debit)?\s*card\s+no\.?\s*(?:xx)?(\d{4})/i);
+        if (cardNoPattern) {
+          const possibleCard = cardNoPattern[1];
+          // Extra validation for "Card No." patterns as they're more prone to amount confusion
+          if (this.isValidCardNumber(possibleCard) && !this.isLikelyAmount(text, possibleCard)) {
+            cardNumber = possibleCard;
+          }
+        }
+      }
+      
+      // Pattern 5: Generic "ending 1234" - MOST RESTRICTIVE (last resort)
+      if (!cardNumber) {
+        const genericEndingPattern = text.match(/ending\s+(?:in\s+|with\s+)?(\d{4})/i);
+        if (genericEndingPattern) {
+          const possibleCard = genericEndingPattern[1];
+          // Very strict validation for generic patterns
+          if (this.isValidCardNumber(possibleCard) && !this.isLikelyAmount(text, possibleCard)) {
+            cardNumber = possibleCard;
+          }
+        }
+      }
+      
+      // Extract card type
+      if (lower.includes('credit')) cardType = 'Credit';
+      else if (lower.includes('debit')) cardType = 'Debit';
+      else if (lower.includes('visa')) cardType = 'Visa';
+      else if (lower.includes('mastercard') || lower.includes('master')) cardType = 'Mastercard';
+      else if (lower.includes('rupay')) cardType = 'RuPay';
+      else if (lower.includes('amex') || lower.includes('american express')) cardType = 'Amex';
+      else cardType = 'Credit'; // Default to Credit if no specific type found
+      
+      // Extract bank name if not already found
+      if (!bankName) {
+        const bankMatch = text.match(/(hdfc|sbi|icici|axis|kotak|citibank|amex|american express)/i);
+        if (bankMatch) {
+          bankName = bankMatch[1].toUpperCase();
+        }
+      }
+      
+      // Return formatted card info
+      if (cardNumber) {
+        if (bankName) {
+          return `${bankName} ${cardType} ****${cardNumber}`;
+        } else {
+          return `${cardType} Card ****${cardNumber}`;
+        }
+      }
+      
+      // Fallback patterns
       if (lower.includes('visa')) return 'Visa Card';
       if (lower.includes('mastercard') || lower.includes('master')) return 'Mastercard';
       if (lower.includes('amex') || lower.includes('american express')) return 'American Express';
-      return 'Debit/Credit Card';
+      return 'Credit/Debit Card';
     }
     
     if (hints.isBankTransfer) {
@@ -750,6 +920,72 @@ Return JSON only:`;
     }
     
     return 'Gmail Sync';
+  }
+
+  /**
+   * Validates if a 4-digit number is likely a card number (not a year or amount)
+   */
+  private isValidCardNumber(cardDigits: string): boolean {
+    const num = parseInt(cardDigits);
+    
+    // Reject years (2020-2030)
+    if (num >= 2020 && num <= 2030) {
+      return false;
+    }
+    
+    // Reject common amount patterns (like 4178 from Rs.4178.73)
+    // Card numbers typically don't start with 0
+    if (cardDigits.startsWith('0')) {
+      return false;
+    }
+    
+    // Valid card number range (most cards start with 1-9)
+    return num >= 1000 && num <= 9999;
+  }
+
+  /**
+   * Checks if a 4-digit number appears in an amount context that would conflict with card number
+   */
+  private isLikelyAmount(text: string, digits: string): boolean {
+    // Check if the same digits appear in both amount and card contexts
+    const hasCardContext = text.match(new RegExp(`card.*ending\\s+${digits}`, 'i'));
+    
+    // If no card context, use standard amount detection
+    if (!hasCardContext) {
+      const patterns = [
+        new RegExp(`Rs\\.?\\s*${digits}\\.\\d{2}`, 'i'),
+        new RegExp(`(?:spent|charged|debited).*Rs\\.?\\s*${digits}(?:\\.\\d{2})?`, 'i'),
+        new RegExp(`Rs\\.?\\s*${digits}(?:\\.\\d{2})?.*(?:spent|charged|debited)`, 'i')
+      ];
+      return patterns.some(pattern => text.match(pattern));
+    }
+    
+    // If card context exists, check for suspicious amount patterns
+    // Case 1: Exact whole number match - "Rs.4178 spent on card ending 4178"
+    const exactWholeMatch = text.match(new RegExp(`Rs\\.?\\s*${digits}(?!\\.).*card.*ending\\s+${digits}`, 'i'));
+    if (exactWholeMatch) {
+      return true; // Reject - exact amount matches card number
+    }
+    
+    // Case 2: Decimal amounts - be more nuanced
+    const decimalAmountMatch = text.match(new RegExp(`Rs\\.?\\s*(\\d+)\\.(\\d{2}).*card.*ending\\s+${digits}`, 'i'));
+    if (decimalAmountMatch) {
+      const amountBase = decimalAmountMatch[1];
+      const amountDecimals = decimalAmountMatch[2];
+      
+      // Only reject if the FULL amount (including decimals) would be essentially the same as card number
+      // Example: "Rs.4178.00" with card 4178 - suspicious (4178.00 is essentially 4178)
+      // Example: "Rs.2757.50" with card 2757 - legitimate (2757.50 ≠ 2757)
+      if (amountBase === digits && amountDecimals === "00") {
+        return true; // Reject - amount like Rs.4178.00 is essentially 4178
+      }
+      
+      // If decimals are non-zero, the amount is different from card number
+      return false; // Allow - amounts like Rs.2757.50 are different from 2757
+    }
+    
+    // Default: allow
+    return false;
   }
 
   /**
@@ -771,41 +1007,147 @@ Return JSON only:`;
     const fullText = (snippet + ' ' + body).toLowerCase();
     const date = new Date(parseInt(message.internalDate));
 
-    // Check if it's a promotional email (ignore if no transaction keywords)
-    const transactionKeywords = ['credit', 'debit', 'failed', 'upi', 'subscription', 'bank transaction', 
-                                  'payment', 'transaction', 'scheduled', 'auto-payment', 'spent', 'charged', 
-                                  'receipt', 'confirmed', 'debited', 'credited'];
-    const hasTransactionKeyword = transactionKeywords.some(keyword => fullText.includes(keyword));
-    
-    // Promotional patterns to ignore
-    const promotionalPatterns = [
+    // ENHANCED PROMOTIONAL EMAIL DETECTION
+    // First check for strong promotional indicators (these override transaction keywords)
+    const strongPromotionalPatterns = [
+      // Credit card offers and eligibility
+      /credit card.*(?:profile|eligible|eligibility|offer|pre-approved|approved|application)/i,
+      /we wanted to share.*update.*credit card/i,
+      /you.*(?:eligible|qualify).*credit card/i,
+      /credit card.*(?:limit|offer).*(?:up to|upto|₹|rs)/i,
+      /based on your profile.*you.*eligible/i,
+      /pre-approved.*credit card/i,
+      /congratulations.*approved.*credit card/i,
+      
+      // Loan offers
+      /personal loan.*(?:offer|eligible|pre-approved)/i,
+      /loan.*(?:up to|upto).*₹.*(?:lakh|crore)/i,
+      
+      // Investment and insurance offers
+      /investment.*opportunity/i,
+      /insurance.*policy.*offer/i,
+      /mutual fund.*investment/i,
+      
+      // General promotional content
       /bill payment is due/i,
       /earn.*cashback/i,
       /earn.*back on this payment/i,
       /offer.*discount/i,
       /promotional/i,
-      /marketing/i
+      /marketing/i,
+      /newsletter/i,
+      /unsubscribe/i,
+      
+      // Bank account opening offers
+      /open.*account.*with/i,
+      /account opening.*offer/i,
+      
+      // Generic offers with amounts
+      /offer.*(?:up to|upto).*₹.*(?:lakh|crore)/i,
+      /get.*(?:up to|upto).*₹.*(?:lakh|crore)/i,
+      
+      // OTP and verification (backup check)
+      /otp|one time password|verification code|verify your/i
     ];
     
-    const isPromotional = promotionalPatterns.some(pattern => fullText.match(pattern)) && !hasTransactionKeyword;
+    // Check for strong promotional patterns first
+    const isStronglyPromotional = strongPromotionalPatterns.some(pattern => fullText.match(pattern));
     
-    if (isPromotional) {
-      console.log('Promotional email detected, skipping');
+    if (isStronglyPromotional) {
+      console.log('Strong promotional email detected, skipping');
+      return null;
+    }
+    
+    // Check for actual transaction indicators (must have these for valid transactions)
+    const actualTransactionPatterns = [
+      // Actual spending/charging
+      /(?:spent|charged|debited).*(?:rs|₹|inr)/i,
+      /(?:rs|₹|inr).*(?:spent|charged|debited)/i,
+      
+      // Actual crediting
+      /(?:credited|received|refund).*(?:rs|₹|inr)/i,
+      /(?:rs|₹|inr).*(?:credited|received|refunded)/i,
+      
+      // UPI transactions
+      /upi.*(?:transaction|payment|transfer)/i,
+      /(?:transaction|payment|transfer).*upi/i,
+      
+      // Card transactions with merchant
+      /(?:card|visa|mastercard).*(?:transaction|payment).*at/i,
+      /transaction.*(?:card|visa|mastercard)/i,
+      
+      // Bank transfers
+      /(?:neft|imps|rtgs).*transfer/i,
+      /transfer.*(?:neft|imps|rtgs)/i,
+      
+      // Payment confirmations
+      /payment.*(?:successful|confirmed|completed)/i,
+      /(?:successful|confirmed|completed).*payment/i,
+      
+      // Transaction reference numbers
+      /transaction.*(?:reference|ref|id).*\d{6,}/i,
+      /(?:reference|ref|id).*\d{6,}.*transaction/i
+    ];
+    
+    const hasActualTransactionPattern = actualTransactionPatterns.some(pattern => fullText.match(pattern));
+    
+    // If no actual transaction patterns found, likely promotional
+    if (!hasActualTransactionPattern) {
+      console.log('No actual transaction patterns found, likely promotional email, skipping');
       return null;
     }
 
+    // ENHANCED AMOUNT EXTRACTION - Fixed patterns with proper precedence
     const amountPatterns = [
-      /(?:Rs\.?|₹|INR)\s*(\d{1,3}(?:,\d{2,3})*(?:\.\d{2})?)/i,
-      /(?:\$|USD|EUR|GBP|€|£)\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
-      /(\d{1,3}(?:,\d{2,3})*(?:\.\d{2})?)\s*(?:Rs\.?|₹|INR|USD|Rupees?)/i,
-      /(?:amount|of|for|total|spent)\s*:?\s*(\d{1,3}(?:,\d{2,3})*(?:\.\d{2})?)/i,
-      // Pattern for "Rs.4178.73" without space
-      /Rs\.(\d{1,3}(?:,\d{2,3})*(?:\.\d{2})?)/i
+      // Specific transaction patterns - prioritize longer numbers first
+      /(?:spent|charged|debited|credited|received|paid|transfer).*(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      /(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*(?:spent|charged|debited|credited|received|paid|transfer)/i,
+      
+      // UPI transaction amounts
+      /upi.*(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      /(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*upi/i,
+      
+      // Card transaction amounts
+      /card.*(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      /(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*card/i,
+      
+      // Transaction with "at" merchant
+      /(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*at\s+[A-Z]/i,
+      
+      // Pattern for "Rs.XXXX.XX" without space - most specific first
+      /Rs\.(\d{4,}(?:\.\d{2})?)/i,
+      /Rs\.(\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      
+      // Generic patterns with longer numbers first
+      /(?:Rs\.?|₹|INR)\s*(\d{4,}(?:\.\d{2})?)/i,
+      /(?:Rs\.?|₹|INR)\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      /(?:Rs\.?|₹|INR)\s*(\d{1,3}(?:\.\d{2})?)/i,
+      
+      // Fallback patterns
+      /(\d{4,}(?:\.\d{2})?).*(?:Rs\.?|₹|INR)/i,
+      /(\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*(?:Rs\.?|₹|INR)/i,
+      /(\d{1,3}(?:\.\d{2})?).*(?:Rs\.?|₹|INR)/i
     ];
 
     let amount = 0;
     // Search in both snippet and body for better accuracy
     const searchText = snippet + ' ' + body;
+    
+    // Avoid extracting amounts from promotional contexts - Fixed patterns with proper precedence
+    const promotionalAmountPatterns = [
+      /(?:up to|upto|limit|eligible for|qualify for).*₹.*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i,
+      /₹.*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?).*(?:limit|eligible|qualify|offer)/i,
+      /credit.*limit.*₹.*(\d{4,}(?:\.\d{2})?|\d{1,3}(?:,\d{2,3})+(?:\.\d{2})?)/i
+    ];
+    
+    // Check if amount is in promotional context
+    const isPromotionalAmount = promotionalAmountPatterns.some(pattern => searchText.match(pattern));
+    
+    if (isPromotionalAmount) {
+      console.log('Amount found in promotional context, skipping');
+      return null;
+    }
+    
     for (const pattern of amountPatterns) {
       const match = searchText.match(pattern);
       if (match) {
@@ -902,43 +1244,106 @@ Return JSON only:`;
   }
 
   private extractMerchant(text: string, hints: { isUPI: boolean; isCard: boolean; isBankTransfer: boolean }): string {
-    // Priority 1: CREDIT - "by VPA email@bank Name" pattern
-    const creditVpaPattern = /by VPA\s+[A-Za-z0-9\.\-_]+@[A-Za-z]+\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$|Your)/i;
-    const creditVpaMatch = text.match(creditVpaPattern);
-    if (creditVpaMatch && creditVpaMatch[1]) {
-      const senderName = creditVpaMatch[1].trim();
-      if (senderName.length > 2 && senderName.length < 50) {
-        return senderName;
+    // Enhanced UPI Patterns - Priority 1: CREDIT UPI (money received)
+    const creditUPIPatterns = [
+      // "Rs. 250.00 is successfully credited to your account **3556 by VPA 8376834779@superyes AMIE HAZARIKA"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+is\s+successfully\s+credited.*by\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$)/i,
+      
+      // "by VPA email@bank Name" pattern (existing)
+      /by VPA\s+[A-Za-z0-9\.\-_]+@[A-Za-z]+\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$|Your)/i,
+      
+      // "Rs.50000.00 credited by VPA john.doe@paytm JOHN DOE on 25-Dec"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+credited\s+by\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\s+dated|\.|$)/i,
+      
+      // "Rs.50000.00 has been credited to your account by VPA user@bank USER NAME"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+(?:has been\s+)?credited.*by\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$)/i,
+      
+      // "UPI transaction: Rs.1000 received from john@okaxis JOHN SMITH"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+received\s+from\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$)/i,
+      
+      // Generic patterns without amount
+      /is\s+successfully\s+credited.*by\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\s+dated|\.|$)/i,
+      /credited\s+by\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\s+dated|\.|$)/i,
+      /received\s+from\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$)/i
+    ];
+
+    // Try credit UPI patterns first
+    for (const pattern of creditUPIPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        // For patterns with 3 groups, use the name (group 3)
+        if (match[3]) {
+          const merchantName = match[3].trim();
+          if (merchantName && merchantName.length > 2 && merchantName.length < 50) {
+            return this.cleanUPIMerchant(merchantName);
+          }
+        }
+        // For patterns with 1 group, use the name (group 1)
+        else if (match[1]) {
+          const merchantName = match[1].trim();
+          if (merchantName && merchantName.length > 2 && merchantName.length < 50) {
+            return this.cleanUPIMerchant(merchantName);
+          }
+        }
       }
     }
 
-    // Priority 2: DEBIT - Account to account transfer - "debited from account X to account ***Y"
+    // Enhanced UPI Patterns - Priority 2: DEBIT UPI (money sent)
+    const debitUPIPatterns = [
+      // "Rs.50000.00 has been debited from account 3556 to VPA 9097490427@pz VISHWJEET KUMAR"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+(?:has been\s+)?debited\s+from\s+account\s+\d+\s+to\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s]+?)(?:\s+on|\.|$)/i,
+      
+      // "Rs.50000.00 debited to VPA merchant@paytm MERCHANT NAME on 25-Dec"
+      /Rs\.?\s*[\d,]+(?:\.\d{2})?\s+(?:has been\s+)?debited.*to\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s\&\.\-]+?)(?:\s+on|\.|$)/i,
+      
+      // "to VPA merchant@bank MerchantName" pattern (existing)
+      /to VPA\s+([A-Za-z0-9\.\-_]+)@[A-Za-z]+\s+([A-Za-z0-9\s\&\.\-]+?)(?:\s+on|\.|$)/i,
+      
+      // "UPI payment to merchant@axis ZOMATO BANGALORE"
+      /payment\s+to\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s\&\.\-]+?)(?:\s+on|\.|$)/i,
+      
+      // Generic patterns without amount
+      /debited.*to\s+VPA\s+([A-Za-z0-9\.\-_]+)@([A-Za-z]+)\s+([A-Z][A-Za-z\s\&\.\-]+?)(?:\s+on|\.|$)/i
+    ];
+
+    // Try debit UPI patterns
+    for (const pattern of debitUPIPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        // For patterns with 3 groups, use the name (group 3)
+        if (match[3]) {
+          const merchantName = match[3].trim();
+          if (merchantName && merchantName.length > 2 && merchantName.length < 50) {
+            return this.cleanUPIMerchant(merchantName);
+          }
+        }
+        // For patterns with 2 groups, use the name (group 2) or fallback to VPA username (group 1)
+        else if (match[2]) {
+          const merchantName = match[2].trim();
+          if (merchantName && merchantName.length > 2 && merchantName.length < 50) {
+            return this.cleanUPIMerchant(merchantName);
+          }
+          // Fallback to VPA username
+          const vpaUser = match[1]?.split('.')[0];
+          if (vpaUser && vpaUser.length > 2) {
+            return this.cleanUPIMerchant(vpaUser);
+          }
+        }
+      }
+    }
+
+    // Priority 3: Account to account transfer - "debited from account X to account ***Y"
     const accountToAccountPattern = /debited from account\s+\d+\s+to account\s+(\*{2,}\d+)/i;
     const accountToAccountMatch = text.match(accountToAccountPattern);
     if (accountToAccountMatch && accountToAccountMatch[1]) {
       return `Account ${accountToAccountMatch[1]}`;
     }
 
-    // Priority 3: DEBIT - "to account ***9592" pattern
+    // Priority 4: "to account ***9592" pattern
     const accountPattern = /to account\s+(\*{2,}\d+)/i;
     const accountMatch = text.match(accountPattern);
     if (accountMatch) {
       return `Account ${accountMatch[1]}`;
-    }
-
-    // Priority 4: DEBIT - "to VPA merchant@bank MerchantName" pattern
-    const debitVpaPattern = /to VPA\s+([A-Za-z0-9\.\-_]+)@[A-Za-z]+\s+([A-Za-z0-9\s\&\.\-]+?)(?:\s+on|\.|$)/i;
-    const debitVpaMatch = text.match(debitVpaPattern);
-    if (debitVpaMatch) {
-      // Use the merchant name after VPA (group 2) if available, otherwise use VPA username (group 1)
-      const merchantName = debitVpaMatch[2]?.trim();
-      if (merchantName && merchantName.length > 2) {
-        return merchantName;
-      }
-      const vpaUsername = debitVpaMatch[1]?.split('.')[0]; // Take first part before dot
-      if (vpaUsername && vpaUsername.length > 2) {
-        return vpaUsername;
-      }
     }
 
     // Priority 5: Card transactions - "at MERCHANTNAME" or "Info: MERCHANTNAME" pattern
@@ -987,6 +1392,33 @@ Return JSON only:`;
     }
     
     return 'Unknown Merchant';
+  }
+
+  /**
+   * Clean UPI merchant names
+   */
+  private cleanUPIMerchant(merchant: string): string {
+    // Remove VPA domain suffixes (including new ones like pz, superyes)
+    merchant = merchant.replace(/@(axisb|paytm|okaxis|ybl|icici|hdfcbank|sbi|kotak|axis|okhdfcbank|axl|oksbi|okicici|pz|superyes|okhdfcbank|okhdfc|okicici|oksbi|okaxis|okkotak|okyes|okindusind|okpnb|okbob|okcanara|okfederal|okrbl|okbandhan|okciti|okhsbc|oksc|okdbs)\b/gi, '');
+    
+    // Remove common UPI prefixes/suffixes
+    merchant = merchant.replace(/^(VPA|UPI|PA)\s*/i, '');
+    merchant = merchant.replace(/\s*(VPA|UPI|PA)$/i, '');
+    
+    // Remove transaction reference numbers that might be included
+    merchant = merchant.replace(/\s+\d{10,}/g, '');
+    
+    // Clean up extra spaces
+    merchant = merchant.replace(/\s+/g, ' ').trim();
+    
+    return this.titleCase(merchant);
+  }
+
+  /**
+   * Convert string to title case
+   */
+  private titleCase(str: string): string {
+    return str.toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   }
 
   private categorize(merchant: string): string {

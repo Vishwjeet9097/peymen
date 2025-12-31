@@ -436,7 +436,7 @@ const Layout: React.FC<LayoutProps> = ({
             <span className="nav-item-label">Home</span>
           </button>
 
-          {/* Transactions / Cards */}
+          {/* Transactions / History */}
           <button
             onClick={() => setActiveTab('transactions')}
             className={`nav-item ${activeTab === 'transactions' ? 'active' : ''}`}
@@ -446,7 +446,7 @@ const Layout: React.FC<LayoutProps> = ({
               size={24}
               strokeWidth={activeTab === 'transactions' ? 2.5 : 2}
             />
-            <span className="nav-item-label">Cards</span>
+            <span className="nav-item-label">History</span>
           </button>
 
           {/* Center Action Button - Cloud Sync */}

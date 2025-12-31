@@ -23,7 +23,7 @@ import LoginScreen from './components/LoginScreen';
 import FirstTimeSyncModal from './components/FirstTimeSyncModal';
 import InstallPromptModal from './components/InstallPromptModal';
 
-const isDevelopment = import.meta.env.DEV;
+const isDevelopment = (import.meta as any).env?.DEV;
 
 const getDummyTransactions = (): Transaction[] => {
   if (!isDevelopment) return [];
@@ -41,7 +41,93 @@ const getDummyTransactions = (): Transaction[] => {
 };
 
 const App: React.FC = () => {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('qpay_token'));
+  // Enhanced session persistence with token validation
+  const [token, setToken] = useState<string | null>(() => {
+    const storedToken = localStorage.getItem('qpay_token');
+    const tokenExpiry = localStorage.getItem('qpay_token_expiry');
+    
+    // Check if token exists and is not expired
+    if (storedToken && tokenExpiry) {
+      const expiryTime = parseInt(tokenExpiry);
+      const currentTime = Date.now();
+      
+      // If token expires in next 5 minutes, consider it invalid
+      if (currentTime < (expiryTime - 300000)) {
+        console.log('✅ Valid session token found, maintaining login state');
+        return storedToken;
+      } else {
+        console.log('⚠️ Token expired, clearing session');
+        localStorage.removeItem('qpay_token');
+        localStorage.removeItem('qpay_token_expiry');
+        return null;
+      }
+    }
+    
+    return null;
+  });
+
+  // Security: Cleanup leaked API keys on startup
+  useEffect(() => {
+    const cleanupLeakedKeys = () => {
+      const leakedKeys = [
+        'AIzaSyAN1gbmoj37LUE0Wcrw3Km4c4MZuSrDaxs', // Reported as leaked in console logs
+        'AIzaSyDCNNhW1--jdGKdAUpK_6BBkADIjs_jtPo'  // Previous leaked key from .env
+      ];
+      
+      const storedKey = localStorage.getItem('qpay_gemini_key');
+      const encryptedKey = localStorage.getItem('qpay_gemini_key_encrypted');
+      
+      let cleanupNeeded = false;
+      
+      if (storedKey && leakedKeys.includes(storedKey)) {
+        console.log('🚨 SECURITY: Removing leaked API key from localStorage');
+        localStorage.removeItem('qpay_gemini_key');
+        cleanupNeeded = true;
+      }
+      
+      if (encryptedKey) {
+        // Try to decrypt and check (basic check)
+        try {
+          const decoded = atob(encryptedKey);
+          if (leakedKeys.some(key => decoded.includes(key))) {
+            console.log('🚨 SECURITY: Removing leaked encrypted API key from localStorage');
+            localStorage.removeItem('qpay_gemini_key_encrypted');
+            cleanupNeeded = true;
+          }
+        } catch (e) {
+          // If decryption fails, remove the corrupted encrypted key
+          console.log('🧹 Removing corrupted encrypted API key');
+          localStorage.removeItem('qpay_gemini_key_encrypted');
+          cleanupNeeded = true;
+        }
+      }
+      
+      if (cleanupNeeded) {
+        setGeminiApiKey(''); // Clear from state
+        notificationService.add(
+          'warning',
+          'Security Cleanup',
+          '🔐 Removed leaked API key from storage. Please set a new Gemini API key in Settings for AI-powered transaction parsing.'
+        );
+      }
+    };
+    
+    // Run cleanup on startup
+    cleanupLeakedKeys();
+    
+    // Set up global notification function for GmailService
+    (window as any).showLeakedKeyNotification = () => {
+      notificationService.add(
+        'error',
+        'Leaked API Key Detected',
+        '🚨 Your Gemini API key was reported as leaked and has been removed. Please generate a new key in Settings.'
+      );
+    };
+    
+    return () => {
+      delete (window as any).showLeakedKeyNotification;
+    };
+  }, []);
   
   // Get Client ID with priority: env variable > localStorage
   const getClientId = (): string => {
@@ -57,7 +143,21 @@ const App: React.FC = () => {
   };
   
   const [clientId, setClientId] = useState<string>(getClientId());
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    // Restore user profile from localStorage if available
+    const storedUser = localStorage.getItem('qpay_user_profile');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        console.log('✅ Restored user profile from storage');
+        return parsedUser;
+      } catch (error) {
+        console.warn('Failed to parse stored user profile');
+        localStorage.removeItem('qpay_user_profile');
+      }
+    }
+    return null;
+  });
   
   // Initialize activeTab from URL or default to dashboard
   const getInitialTab = (): string => {
@@ -81,7 +181,27 @@ const App: React.FC = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [showDummyData, setShowDummyData] = useState<boolean>(() => {
     const saved = localStorage.getItem('qpay_show_dummy');
-    return saved !== null ? saved === 'true' : isDevelopment;
+    const isGuestMode = localStorage.getItem('qpay_guest_mode') === 'true';
+    const hasToken = localStorage.getItem('qpay_token');
+    
+    // Priority logic:
+    // 1. If user has explicit preference, use it
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    
+    // 2. If user is logged in (has token), don't show dummy data
+    if (hasToken) {
+      return false;
+    }
+    
+    // 3. If in guest mode, show dummy data
+    if (isGuestMode) {
+      return true;
+    }
+    
+    // 4. Default: only show in development mode when not logged in
+    return isDevelopment;
   });
   const [geminiApiKey, setGeminiApiKey] = useState<string>(localStorage.getItem('qpay_gemini_key') || '');
   
@@ -166,6 +286,13 @@ const App: React.FC = () => {
     setUser(null);
     setIsGuestMode(false);
     localStorage.removeItem('qpay_guest_mode');
+    localStorage.removeItem('qpay_user_profile'); // Clear persisted user profile
+    
+    // Reset dummy data to development default (only show in dev mode when not logged in)
+    const shouldShowDummy = isDevelopment;
+    setShowDummyData(shouldShowDummy);
+    localStorage.setItem('qpay_show_dummy', shouldShowDummy.toString());
+    
     // Show login screen after logout
     setShowLoginScreen(true);
   }, [token]);
@@ -177,7 +304,12 @@ const App: React.FC = () => {
       });
       if (!res.ok) throw new Error("Session expired");
       const data = await res.json();
-      setUser({ name: data.name, email: data.email, picture: data.picture });
+      const userProfile = { name: data.name, email: data.email, picture: data.picture };
+      setUser(userProfile);
+      
+      // Persist user profile to localStorage for session restoration
+      localStorage.setItem('qpay_user_profile', JSON.stringify(userProfile));
+      console.log('✅ User profile saved to storage for session persistence');
       setError(null);
     } catch (err) {
       console.error('Profile fetch failed:', err);
@@ -218,6 +350,19 @@ const App: React.FC = () => {
 
     checkSession();
   }, [clientId, fetchProfile, token, handleLogout, isGuestMode]);
+
+  // Auto-hide dummy data when user logs in
+  useEffect(() => {
+    if (user && !isGuestMode) {
+      // User is logged in with Google - hide dummy data
+      setShowDummyData(false);
+      localStorage.setItem('qpay_show_dummy', 'false');
+    } else if (isGuestMode) {
+      // Guest mode - show dummy data
+      setShowDummyData(true);
+      localStorage.setItem('qpay_show_dummy', 'true');
+    }
+  }, [user, isGuestMode]);
 
   // Check if onboarding should be shown
   useEffect(() => {
@@ -358,13 +503,44 @@ const App: React.FC = () => {
       return;
     }
 
+    // Debug authentication state
+    console.log('🔍 Debug: Authentication state before sync');
+    console.log('- User state:', user ? 'SET' : 'NOT SET');
+    console.log('- Token state:', token ? 'SET' : 'NOT SET');
+    console.log('- Guest mode:', isGuestMode);
+    console.log('- Stored token:', localStorage.getItem('qpay_token') ? 'EXISTS' : 'MISSING');
+    console.log('- Token expiry:', localStorage.getItem('qpay_token_expiry'));
+
     if (!AuthService.isTokenValid()) {
+      console.log('⚠️ AuthService says token is invalid');
       alert('Please login with Google to sync emails.');
       handleLogin();
       return;
     }
 
-    if (!token) return;
+    // Check if token has Gmail scope
+    if (!AuthService.hasGmailScope()) {
+      console.log('⚠️ Token missing Gmail scope');
+      notificationService.add(
+        'warning',
+        'Gmail Permission Required',
+        'Your login doesn\'t include Gmail access. Please login again to grant Gmail permissions.'
+      );
+      setTimeout(() => {
+        handleLogout();
+        setTimeout(() => {
+          handleLogin();
+        }, 1000);
+      }, 2000);
+      return;
+    }
+
+    if (!token && !localStorage.getItem('qpay_token')) {
+      console.log('⚠️ No token found in state or localStorage');
+      alert('Please login with Google to sync emails.');
+      handleLogin();
+      return;
+    }
 
     setIsSyncConfirmOpen(true);
   };
@@ -377,12 +553,71 @@ const App: React.FC = () => {
     setSyncProgress({ status: 'fetching', current: 0, total: 0, saved: 0, message: syncType ? 'Auto-syncing...' : 'Connecting to Gmail...' });
 
     try {
-      // Get token from localStorage (more reliable than state)
-      const tokenToUse = localStorage.getItem('qpay_token') || token;
-      if (!tokenToUse) {
-        throw new Error('No access token available. Please login again.');
+      // ENHANCED TOKEN VALIDATION
+      console.log('🔍 Validating access token...');
+      
+      // Get token from multiple sources with fallback
+      let tokenToUse = token || localStorage.getItem('qpay_token');
+      const tokenExpiry = localStorage.getItem('qpay_token_expiry');
+      
+      // Check if token exists first (primary validation)
+      if (!tokenToUse || tokenToUse.trim() === '') {
+        console.error('❌ No access token found in state or localStorage');
+        // Clear any invalid token data
+        localStorage.removeItem('qpay_token');
+        localStorage.removeItem('qpay_token_expiry');
+        setToken(null);
+        throw new Error('GMAIL_AUTH_REQUIRED: No access token available. Please login again.');
       }
       
+      // Check if user is logged in (but allow if we have a valid token)
+      if (!user && !isGuestMode) {
+        console.warn('⚠️ User state not set but token exists, attempting to fetch profile...');
+        // Try to fetch profile with the token we have
+        try {
+          await fetchProfile(tokenToUse);
+          console.log('✅ Successfully fetched user profile');
+        } catch (profileError) {
+          console.error('❌ Failed to fetch user profile:', profileError);
+          throw new Error('GMAIL_AUTH_REQUIRED: Please login with Google to sync emails.');
+        }
+      }
+      
+      // Check token expiry (only if expiry info is available)
+      if (tokenExpiry && tokenExpiry !== 'null' && tokenExpiry !== 'undefined') {
+        try {
+          const expiryTime = parseInt(tokenExpiry);
+          const currentTime = Date.now();
+          const timeUntilExpiry = expiryTime - currentTime;
+          
+          console.log(`⏰ Token expires in ${Math.round(timeUntilExpiry / 1000 / 60)} minutes`);
+          
+          // If token expires in less than 2 minutes, consider it expired
+          if (timeUntilExpiry < 120000) {
+            console.error('⏰ Access token has expired or will expire soon');
+            // Clear expired token
+            localStorage.removeItem('qpay_token');
+            localStorage.removeItem('qpay_token_expiry');
+            setToken(null);
+            throw new Error('GMAIL_AUTH_EXPIRED: Your session has expired. Please login again.');
+          }
+        } catch (parseError) {
+          console.warn('⚠️ Could not parse token expiry, proceeding with token validation');
+        }
+      } else {
+        console.log('⚠️ No token expiry information available, skipping expiry check');
+      }
+      
+      // Final validation: ensure token is a valid string
+      if (typeof tokenToUse !== 'string' || tokenToUse.length < 10) {
+        console.error('❌ Invalid token format');
+        localStorage.removeItem('qpay_token');
+        localStorage.removeItem('qpay_token_expiry');
+        setToken(null);
+        throw new Error('GMAIL_AUTH_REQUIRED: Invalid access token. Please login again.');
+      }
+      
+      console.log('✅ Access token validation passed, proceeding with sync');
       const gmail = new GmailService(tokenToUse, geminiApiKey);
 
       // Calculate days based on sync type or custom date range
@@ -407,8 +642,8 @@ const App: React.FC = () => {
         daysAgo = Math.floor(Date.now() / 1000) - (actualDays * 24 * 60 * 60);
       }
       
-      // Build Gmail query with date range
-      let query = `(subject:(transaction OR debit OR credit OR payment OR confirmed OR receipt OR "spent on" OR "charged" OR "UPI txn" OR "done a UPI" OR debited OR credited) OR from:(alerts@hdfcbank.net OR alerts@sbi.co.in OR alerts@icicibank.com OR alerts@axisbank.com))`;
+      // Use the enhanced Gmail query with OTP exclusion
+      let query = 'subject:(transaction OR debit OR credit OR payment OR confirmed OR receipt OR "spent on" OR "charged" OR "UPI txn" OR "done a UPI" OR debited OR credited) OR from:(alerts@hdfcbank.net OR alerts@sbi.co.in OR alerts@icicibank.com OR alerts@axisbank.com)';
       
       if (customStartDate && customEndDate) {
         // Custom date range: use after and before
@@ -584,11 +819,50 @@ const App: React.FC = () => {
       let errorMessage = 'Sync failed. Please try again.';
 
       if (err instanceof Error) {
-        if (err.message.includes('GMAIL_SCOPE_INSUFFICIENT')) {
-          errorMessage = '🔐 Gmail Permission Required: Your login didn\'t include Gmail access. Please logout and login again with "Login with Google" to grant Gmail permissions.';
+        if (err.message.includes('GMAIL_AUTH_REQUIRED')) {
+          errorMessage = '🔐 Login Required: Please login with Google to sync your emails.';
+          // Redirect to login
+          setTimeout(() => handleLogin(), 1000);
+        } else if (err.message.includes('GMAIL_AUTH_EXPIRED')) {
+          errorMessage = '⏰ Session Expired: Your login session has expired. Please login again.';
+          // Auto logout and redirect to login
+          setTimeout(() => {
+            handleLogout();
+            handleLogin();
+          }, 2000);
+        } else if (err.message.includes('GMAIL_SCOPE_INSUFFICIENT')) {
+          errorMessage = '🔐 Gmail Permission Required: Your login session doesn\'t have Gmail access. Clearing session and redirecting to login...';
           setActiveTab('settings');
-          // Don't auto-logout - let user manually logout and re-login with correct scopes
-          // Show a clear message instead
+          
+          // COMPREHENSIVE CLEANUP for scope issues
+          console.log('🧹 Performing comprehensive cleanup for Gmail scope issue...');
+          
+          // Clear all authentication-related localStorage
+          localStorage.removeItem('qpay_token');
+          localStorage.removeItem('qpay_token_expiry');
+          localStorage.removeItem('qpay_token_scopes');
+          localStorage.removeItem('qpay_user_profile');
+          
+          // Clear any cached OAuth state
+          localStorage.removeItem('qpay_oauth_state');
+          localStorage.removeItem('qpay_oauth_nonce');
+          
+          // Reset app state
+          setToken(null);
+          setUser(null);
+          
+          // Show a helpful notification
+          notificationService.add(
+            'warning',
+            'Gmail Permission Required',
+            'Your current login doesn\'t include Gmail access. All session data has been cleared. Please grant Gmail permissions when logging in again.'
+          );
+          
+          // Auto-logout and redirect to login to get correct scopes
+          setTimeout(() => {
+            // Force a complete re-authentication with consent
+            handleLogin();
+          }, 3000);
         } else if (err.message.includes('GMAIL_PERMISSION_DENIED')) {
           errorMessage = '⚠️ Gmail Access Denied! Please add your email to Test Users in Google Cloud Console → OAuth Consent Screen.';
           setActiveTab('settings'); // Redirect to settings for help
@@ -596,9 +870,15 @@ const App: React.FC = () => {
           errorMessage = 'Session expired. Please login again.';
           setTimeout(() => handleLogout(), 2000);
         } else if (err.message.includes('403') && !err.message.includes('GMAIL_SCOPE_INSUFFICIENT') && !err.message.includes('GMAIL_PERMISSION_DENIED')) {
-          // Generic 403 error - might be rate limiting or other API restrictions
-          errorMessage = '⚠️ Gmail API Access Restricted: This might be due to rate limiting or API restrictions. Please try again later or check your Google Cloud Console settings.';
-          setActiveTab('settings');
+          // Check if it's a Gemini API key issue
+          if (err.message.includes('leaked') || err.message.includes('PERMISSION_DENIED')) {
+            errorMessage = '🔑 Gemini API Key Issue: Your API key was reported as leaked or invalid. Please update it in Settings. Don\'t worry - basic parsing (without AI) is still working!';
+            setActiveTab('settings');
+          } else {
+            // Generic 403 error - might be rate limiting or other API restrictions
+            errorMessage = '⚠️ Gmail API Access Restricted: This might be due to rate limiting or API restrictions. Please try again later or check your Google Cloud Console settings.';
+            setActiveTab('settings');
+          }
         } else if (err.message.includes('Network')) {
           errorMessage = 'Network error. Please check your internet connection.';
         } else {
@@ -650,14 +930,17 @@ const App: React.FC = () => {
       return;
     }
 
-    // Get token from localStorage first (most reliable source)
+    // Enhanced token validation for sync today
     const storedToken = localStorage.getItem('qpay_token');
+    const tokenExpiry = localStorage.getItem('qpay_token_expiry');
     
-    // Check if user is logged in AND has valid token
-    // Priority: Check storedToken first, then user state
-    if (!storedToken || !AuthService.isTokenValid()) {
-      // If user exists but token is invalid, clear user state
+    // Check if we have a token first (primary validation)
+    if (!storedToken || storedToken.trim() === '') {
+      console.log('🔍 No stored token found for sync today');
+      
+      // If user exists but no token, clear user state
       if (user) {
+        console.log('🧹 Clearing user state due to missing token');
         handleLogout();
       }
       
@@ -670,29 +953,53 @@ const App: React.FC = () => {
       return;
     }
 
-    // Double check user state exists (should match token)
-    if (!user) {
-      // Token exists but user state is missing - fetch profile
-      const tokenToUse = storedToken || token;
-      if (tokenToUse) {
-        try {
-          await fetchProfile(tokenToUse);
-          // Wait a bit for state to update, then retry
-          setTimeout(() => {
-            handleSyncToday();
-          }, 500);
-          return;
-        } catch (err) {
-          // Profile fetch failed, need to login
-          handleLogout();
+    // Check token expiry if available
+    if (tokenExpiry && tokenExpiry !== 'null' && tokenExpiry !== 'undefined') {
+      try {
+        const expiryTime = parseInt(tokenExpiry);
+        const currentTime = Date.now();
+        const timeUntilExpiry = expiryTime - currentTime;
+        
+        // If token expires in less than 5 minutes, refresh login
+        if (timeUntilExpiry < 300000) {
+          console.log('⏰ Token expires soon, requesting fresh login');
+          
+          if (user) {
+            handleLogout();
+          }
+          
           notificationService.add(
             'info',
-            'Login Required',
-            'Please login with Google to sync emails.'
+            'Session Refresh Required',
+            'Your session will expire soon. Please login again.'
           );
           handleLogin();
           return;
         }
+      } catch (parseError) {
+        console.warn('⚠️ Could not parse token expiry for sync today');
+      }
+    }
+
+    // Check if user state exists (but don't fail if token is valid)
+    if (!user) {
+      console.log('🔍 Token exists but user state missing, fetching profile');
+      
+      try {
+        await fetchProfile(storedToken);
+        console.log('✅ Successfully fetched user profile for sync today');
+        // Continue with sync after profile is fetched
+      } catch (err) {
+        console.error('❌ Profile fetch failed during sync today:', err);
+        // Profile fetch failed, need to login
+        handleLogout();
+        notificationService.add(
+          'info',
+          'Login Required',
+          'Please login with Google to sync emails.'
+        );
+        handleLogin();
+        return;
       }
     }
 
@@ -701,31 +1008,28 @@ const App: React.FC = () => {
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
     const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-    // Ensure token state is updated before sync
-    const tokenToUse = storedToken || token;
-    if (!tokenToUse) {
-      notificationService.add(
-        'error',
-        'Token Missing',
-        'Unable to get access token. Please login again.'
-      );
-      handleLogin();
-      return;
-    }
-
     // Update token state if it's different
-    if (tokenToUse !== token) {
-      setToken(tokenToUse);
+    if (storedToken !== token) {
+      console.log('🔄 Updating token state to match localStorage');
+      setToken(storedToken);
     }
 
     // Run sync in background (don't await, let it complete in background)
     handleSync(1, undefined, startOfToday, endOfToday).catch((error) => {
       console.error('Sync error:', error);
-      notificationService.add(
-        'error',
-        'Sync Failed',
-        'Failed to sync today\'s transactions. Please try again.'
-      );
+      
+      // Handle specific sync errors
+      if (error.message.includes('GMAIL_AUTH_REQUIRED') || error.message.includes('GMAIL_AUTH_EXPIRED')) {
+        // Auth error - redirect to login
+        handleLogout();
+        setTimeout(() => handleLogin(), 1000);
+      } else {
+        notificationService.add(
+          'error',
+          'Sync Failed',
+          'Failed to sync today\'s transactions. Please try again.'
+        );
+      }
     });
   }, [user, token, clientId, handleSync, isSyncing, handleLogin, handleLogout, fetchProfile, setActiveTab]);
 
@@ -809,9 +1113,58 @@ const App: React.FC = () => {
     localStorage.setItem('qpay_show_dummy', show.toString());
   };
 
-  const handleGeminiApiKeyChange = (key: string) => {
-    setGeminiApiKey(key);
-    localStorage.setItem('qpay_gemini_key', key);
+  const handleGeminiApiKeyChange = (newKey: string) => {
+    if (!newKey.trim()) {
+      // Clear key
+      localStorage.removeItem('qpay_gemini_key_encrypted');
+      localStorage.removeItem('qpay_gemini_key');
+      setGeminiApiKey('');
+      return;
+    }
+
+    // Check if it's a known leaked key
+    const leakedKeys = [
+      'AIzaSyAN1gbmoj37LUE0Wcrw3Km4c4MZuSrDaxs', // Reported as leaked in console logs
+      'AIzaSyDCNNhW1--jdGKdAUpK_6BBkADIjs_jtPo'  // Previous leaked key from .env
+    ];
+    
+    if (leakedKeys.includes(newKey)) {
+      notificationService.add(
+        'error',
+        'Leaked API Key Detected',
+        '🚨 This API key is on the leaked keys blacklist and cannot be used. Please generate a new key from Google AI Studio.'
+      );
+      return;
+    }
+
+    // Validate API key format
+    if (!newKey.startsWith('AIza') || newKey.length !== 39) {
+      notificationService.add(
+        'error',
+        'Invalid API Key',
+        '❌ Invalid Gemini API key format. Keys should start with "AIza" and be 39 characters long.'
+      );
+      return;
+    }
+
+    // Use secure storage via GmailService
+    const tempGmailService = new GmailService('temp', newKey);
+    const success = (tempGmailService as any).setEncryptedApiKey(newKey);
+    
+    if (success) {
+      setGeminiApiKey(newKey);
+      notificationService.add(
+        'success',
+        'API Key Secured',
+        '🔐 Gemini API key has been securely encrypted and stored! AI-powered transaction parsing is now enabled.'
+      );
+    } else {
+      notificationService.add(
+        'error',
+        'Storage Failed',
+        '❌ Failed to securely store API key. Please try again.'
+      );
+    }
   };
 
   // Handle URL-based routing

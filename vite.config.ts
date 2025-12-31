@@ -55,12 +55,15 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       
       define: {
-        // Use VITE_ prefix for client-side environment variables
-        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY),
+        // SECURITY: Never include API keys in production bundle
+        // Only include in development mode for local testing
+        'import.meta.env.VITE_GEMINI_API_KEY': isProduction 
+          ? JSON.stringify(null) // Never expose in production
+          : JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || null),
         'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(env.VITE_GOOGLE_CLIENT_ID || env.GOOGLE_CLIENT_ID),
-        // Keep backward compatibility
-        'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY),
+        // Keep backward compatibility (but null in production)
+        'process.env.API_KEY': isProduction ? JSON.stringify(null) : JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || null),
+        'process.env.GEMINI_API_KEY': isProduction ? JSON.stringify(null) : JSON.stringify(env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || null),
         'process.env.GOOGLE_CLIENT_ID': JSON.stringify(env.VITE_GOOGLE_CLIENT_ID || env.GOOGLE_CLIENT_ID),
         // Production mode flag
         'import.meta.env.PROD': JSON.stringify(isProduction),

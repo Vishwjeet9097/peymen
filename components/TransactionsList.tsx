@@ -18,8 +18,13 @@ import {
   Calendar,
   Tag,
   Wallet,
-  Smartphone
+  Smartphone,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
+
+type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'merchant-asc' | 'merchant-desc' | 'category-asc' | 'category-desc';
 
 interface TransactionsListProps {
   transactions: Transaction[];
@@ -34,6 +39,7 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterCardNumber, setFilterCardNumber] = useState<string>('All');
   const [filterPlatform, setFilterPlatform] = useState<string>('All');
+  const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const recordsPerPage = 15;
 
@@ -216,7 +222,7 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
     return words[0] || 'Other';
   };
 
-  // Filtered transactions
+  // Filtered and sorted transactions
   const filteredTransactions = useMemo(() => {
     const extractLast4Digits = (source: string): string | null => {
       const match = source.match(/\*{4}(\d{4})(?!\d)|(\d{4})$/);
@@ -227,7 +233,8 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
       return extractLast4Digits(source);
     };
 
-    return transactions.filter(t => {
+    // First filter the transactions
+    const filtered = transactions.filter(t => {
       const matchesType = filterType === 'ALL' || t.type === filterType;
       const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
       const matchesSearchQuery = matchesSearch(t, searchQuery);
@@ -237,8 +244,32 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
         (getPlatformFromSource(t.source) === filterPlatform);
 
       return matchesType && matchesCategory && matchesSearchQuery && matchesCard && matchesPlatform;
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, filterCategory, searchQuery, filterCardNumber, filterPlatform]);
+    });
+
+    // Then sort the filtered results
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'date-desc':
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+        case 'date-asc':
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+        case 'amount-desc':
+          return b.amount - a.amount;
+        case 'amount-asc':
+          return a.amount - b.amount;
+        case 'merchant-asc':
+          return a.merchant.localeCompare(b.merchant);
+        case 'merchant-desc':
+          return b.merchant.localeCompare(a.merchant);
+        case 'category-asc':
+          return a.category.localeCompare(b.category);
+        case 'category-desc':
+          return b.category.localeCompare(a.category);
+        default:
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+      }
+    });
+  }, [transactions, filterType, filterCategory, searchQuery, filterCardNumber, filterPlatform, sortBy, matchesSearch, getPlatformFromSource]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / recordsPerPage);
@@ -246,12 +277,12 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
   const endIndex = startIndex + recordsPerPage;
   const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters or sorting change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterType, filterCategory, searchQuery, filterCardNumber, filterPlatform]);
+  }, [filterType, filterCategory, searchQuery, filterCardNumber, filterPlatform, sortBy]);
 
-  const hasActiveFilters = filterType !== 'ALL' || filterCategory !== 'All' || searchQuery !== '' || filterCardNumber !== 'All' || filterPlatform !== 'All';
+  const hasActiveFilters = filterType !== 'ALL' || filterCategory !== 'All' || searchQuery !== '' || filterCardNumber !== 'All' || filterPlatform !== 'All' || sortBy !== 'date-desc';
 
   const resetFilters = () => {
     setFilterType('ALL');
@@ -259,6 +290,7 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
     setSearchQuery('');
     setFilterCardNumber('All');
     setFilterPlatform('All');
+    setSortBy('date-desc');
     setCurrentPage(1);
   };
 
@@ -294,7 +326,7 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
           )}
         </div>
         
-        {/* Action Buttons - Mobile Optimized */}
+        {/* Action Buttons with Sort - Mobile Optimized */}
         <div className="flex gap-2">
           <button 
             onClick={onAddClick}
@@ -304,6 +336,28 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
             <span className="hidden min-[375px]:inline">Add Payment</span>
             <span className="min-[375px]:hidden">Add</span>
           </button>
+          
+          {/* Sort Dropdown */}
+          <div className="relative flex-1 sm:flex-none">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="w-full px-4 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest shadow-sm border bg-white text-slate-600 border-slate-100 hover:bg-slate-50 transition-all appearance-none cursor-pointer pr-8"
+            >
+              <option value="date-desc">Latest First</option>
+              <option value="date-asc">Oldest First</option>
+              <option value="amount-desc">High to Low ₹</option>
+              <option value="amount-asc">Low to High ₹</option>
+              <option value="merchant-asc">Store A-Z</option>
+              <option value="merchant-desc">Store Z-A</option>
+              <option value="category-asc">Category A-Z</option>
+              <option value="category-desc">Category Z-A</option>
+            </select>
+            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+              <ArrowUpDown size={14} className="text-slate-400" />
+            </div>
+          </div>
+          
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex-1 sm:flex-none px-4 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest shadow-sm border transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 ${
@@ -316,7 +370,7 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
             <span className="hidden min-[375px]:inline">Filters</span>
             {hasActiveFilters && (
               <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-[8px]">
-                {[filterType !== 'ALL' ? 1 : 0, filterCategory !== 'All' ? 1 : 0, filterCardNumber !== 'All' ? 1 : 0, filterPlatform !== 'All' ? 1 : 0].reduce((a, b) => a + b, 0)}
+                {[filterType !== 'ALL' ? 1 : 0, filterCategory !== 'All' ? 1 : 0, filterCardNumber !== 'All' ? 1 : 0, filterPlatform !== 'All' ? 1 : 0, sortBy !== 'date-desc' ? 1 : 0].reduce((a, b) => a + b, 0)}
               </span>
             )}
           </button>
@@ -430,19 +484,34 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
         )}
       </div>
 
-      {/* Results Summary */}
+      {/* Results Summary with Sort Info */}
       {filteredTransactions.length > 0 && (
         <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
-          <span>
-            Showing {startIndex + 1}-{Math.min(endIndex, filteredTransactions.length)} of {filteredTransactions.length} payments
-          </span>
+          <div className="flex items-center gap-3">
+            <span>
+              Showing {startIndex + 1}-{Math.min(endIndex, filteredTransactions.length)} of {filteredTransactions.length} payments
+            </span>
+            <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-md">
+              <ArrowUpDown size={10} className="text-slate-400" />
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                {sortBy === 'date-desc' && 'Latest First'}
+                {sortBy === 'date-asc' && 'Oldest First'}
+                {sortBy === 'amount-desc' && 'High to Low ₹'}
+                {sortBy === 'amount-asc' && 'Low to High ₹'}
+                {sortBy === 'merchant-asc' && 'Store A-Z'}
+                {sortBy === 'merchant-desc' && 'Store Z-A'}
+                {sortBy === 'category-asc' && 'Category A-Z'}
+                {sortBy === 'category-desc' && 'Category Z-A'}
+              </span>
+            </div>
+          </div>
           {hasActiveFilters && (
             <button
               onClick={resetFilters}
               className="text-rose-600 hover:text-rose-700 flex items-center gap-1"
             >
               <X size={12} />
-              Clear Filters
+              Clear All
             </button>
           )}
         </div>
@@ -530,10 +599,40 @@ const TransactionsList: React.FC<TransactionsListProps> = ({ transactions, onAdd
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-50 bg-slate-50/30">
-                <th className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Store / Activity</th>
+                <th 
+                  className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600 transition-colors select-none"
+                  onClick={() => setSortBy(sortBy === 'merchant-asc' ? 'merchant-desc' : 'merchant-asc')}
+                >
+                  <div className="flex items-center gap-1">
+                    Store / Activity
+                    {sortBy.startsWith('merchant') && (
+                      sortBy === 'merchant-asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                    )}
+                  </div>
+                </th>
                 <th className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Card</th>
-                <th className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
-                <th className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Amount</th>
+                <th 
+                  className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600 transition-colors select-none"
+                  onClick={() => setSortBy(sortBy === 'date-desc' ? 'date-asc' : 'date-desc')}
+                >
+                  <div className="flex items-center gap-1">
+                    Date
+                    {sortBy.startsWith('date') && (
+                      sortBy === 'date-desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 md:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right cursor-pointer hover:text-slate-600 transition-colors select-none"
+                  onClick={() => setSortBy(sortBy === 'amount-desc' ? 'amount-asc' : 'amount-desc')}
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    Amount
+                    {sortBy.startsWith('amount') && (
+                      sortBy === 'amount-desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} />
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">

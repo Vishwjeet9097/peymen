@@ -206,7 +206,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const getBankName = (source: string): string => {
     const s = source.toLowerCase();
     
-    // Common bank patterns
+    // Common bank patterns - Enhanced with more variations
     if (s.includes('sbi') || s.includes('state bank')) return 'SBI';
     if (s.includes('axis')) return 'Axis Bank';
     if (s.includes('icici')) return 'ICICI Bank';
@@ -223,14 +223,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (s.includes('hsbc')) return 'HSBC';
     if (s.includes('amex') || s.includes('american express')) return 'American Express';
     
-    // Try to extract bank name from patterns like "HDFC Visa", "Axis Bank Card", etc.
-    // Pattern 1: "BankName Card" or "BankName Visa/Mastercard"
-    const cardPattern = /^([A-Za-z\s]+?)\s+(?:Bank\s+)?(?:Card|Visa|Mastercard|Master|Amex|RuPay|Credit|Debit)/i;
-    const cardMatch = source.match(cardPattern);
-    if (cardMatch) {
-      const bankName = cardMatch[1].trim();
-      // Validate it's a known bank or looks like a bank name
-      if (bankName.length > 2 && bankName.length < 30) {
+    // Enhanced Pattern Matching for Credit Card Sources
+    // Pattern 1: "ICICI Bank Credit ****1005" or "SBI Credit ****6103"
+    const bankCardPattern = /^([A-Za-z\s]+?)\s+(?:Bank\s+)?(?:Credit|Debit|Card)/i;
+    const bankCardMatch = source.match(bankCardPattern);
+    if (bankCardMatch) {
+      const bankName = bankCardMatch[1].trim();
+      // Validate it's a reasonable bank name
+      if (bankName.length >= 3 && bankName.length <= 25 && /^[A-Za-z\s]+$/.test(bankName)) {
+        // Handle specific cases
+        if (bankName.toLowerCase() === 'icici') return 'ICICI Bank';
+        if (bankName.toLowerCase() === 'hdfc') return 'HDFC Bank';
+        if (bankName.toLowerCase() === 'axis') return 'Axis Bank';
+        if (bankName.toLowerCase() === 'sbi') return 'SBI';
         return bankName;
       }
     }
@@ -240,20 +245,43 @@ const Dashboard: React.FC<DashboardProps> = ({
     const cardNumMatch = source.match(cardNumPattern);
     if (cardNumMatch) {
       const bankName = cardNumMatch[1].trim();
-      if (bankName.length > 2 && bankName.length < 30 && !bankName.toLowerCase().includes('upi')) {
+      if (bankName.length >= 3 && bankName.length <= 25 && !bankName.toLowerCase().includes('upi')) {
+        // Handle specific cases
+        if (bankName.toLowerCase() === 'icici') return 'ICICI Bank';
+        if (bankName.toLowerCase() === 'hdfc') return 'HDFC Bank';
+        if (bankName.toLowerCase() === 'axis') return 'Axis Bank';
+        if (bankName.toLowerCase() === 'sbi') return 'SBI';
         return bankName;
       }
     }
     
     // Pattern 3: Extract first word(s) if it looks like a bank name
     const words = source.split(/\s+/);
+    if (words.length >= 2) {
+      // Check for "ICICI Bank", "HDFC Bank", etc.
+      const firstTwoWords = `${words[0]} ${words[1]}`.toLowerCase();
+      if (firstTwoWords === 'icici bank') return 'ICICI Bank';
+      if (firstTwoWords === 'hdfc bank') return 'HDFC Bank';
+      if (firstTwoWords === 'axis bank') return 'Axis Bank';
+      if (firstTwoWords === 'kotak bank') return 'Kotak Bank';
+      if (firstTwoWords === 'yes bank') return 'YES Bank';
+      if (firstTwoWords === 'rbl bank') return 'RBL Bank';
+      if (firstTwoWords === 'idfc bank') return 'IDFC Bank';
+    }
+    
     if (words.length > 0) {
       const firstWord = words[0];
       // If first word is a known bank abbreviation or looks like a bank
       if (firstWord.length >= 3 && firstWord.length <= 15 && /^[A-Za-z]+$/.test(firstWord)) {
         // Check if it's not a common non-bank word
-        const nonBankWords = ['card', 'debit', 'credit', 'payment', 'transaction', 'upi', 'vpa'];
+        const nonBankWords = ['card', 'debit', 'credit', 'payment', 'transaction', 'upi', 'vpa', 'dear', 'customer', 'gmail'];
         if (!nonBankWords.includes(firstWord.toLowerCase())) {
+          // Handle specific single-word banks
+          if (firstWord.toLowerCase() === 'icici') return 'ICICI Bank';
+          if (firstWord.toLowerCase() === 'hdfc') return 'HDFC Bank';
+          if (firstWord.toLowerCase() === 'axis') return 'Axis Bank';
+          if (firstWord.toLowerCase() === 'sbi') return 'SBI';
+          if (firstWord.toLowerCase() === 'kotak') return 'Kotak';
           return firstWord;
         }
       }
@@ -331,9 +359,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             cardKey = 'UPI_PAYMENT';
             brandName = 'UPI Payment';
           } else if (source.toLowerCase().includes('gmail sync')) {
-            // Group ALL Gmail Sync transactions (including Auto Pay, Failed) into a single card
-            cardKey = 'GMAIL_SYNC';
-            brandName = 'Gmail Sync';
+            // Group ALL unidentified transactions into a single card
+            cardKey = 'UNIDENTIFIED_PAYMENT';
+            brandName = 'Unidentified Payment';
           }
           
           if (!cards[cardKey]) {
@@ -341,8 +369,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               totalSpent: 0,
               count: 0,
               lastUsed: t.date,
-              type: isUPI ? 'UPI Payment' : (cardKey === 'GMAIL_SYNC' ? 'Gmail Sync' : source),
-              cardNumber: '', // No card number for UPI/Gmail Sync
+              type: isUPI ? 'UPI Payment' : (cardKey === 'UNIDENTIFIED_PAYMENT' ? 'Unidentified Payment' : source),
+              cardNumber: '', // No card number for UPI/Unidentified payments
               brandName: brandName
             };
           }
@@ -357,7 +385,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     });
 
     return Object.values(cards).sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [transactions]);
+  }, [transactions, selectedMonth, selectedYear]);
 
   const primaryCard = cardInsights[0] || { totalSpent: 0, type: 'N/A' };
 
@@ -378,8 +406,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         const txCardNumber = getPrimaryCardNumber(t.source);
         return matchesDate && txCardNumber === selectedCard.cardNumber;
       } else {
-        // For Gmail Sync, match all Gmail Sync transactions (including Auto Pay, Failed)
-        if (selectedCardSource === 'Gmail Sync') {
+        // For Unidentified Payment, match all unidentified transactions (including Auto Pay, Failed)
+        if (selectedCardSource === 'Unidentified Payment') {
           const source = (t.source || '').toLowerCase();
           return matchesDate && source.includes('gmail sync');
         }
@@ -637,9 +665,9 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Get display name for cardholder/payment method
   const getCardholderName = (source: string, brandName: string): string => {
-    // Handle Gmail Sync - return clean name without status suffixes
+    // Handle unidentified payments - return professional term
     if (source.toLowerCase().includes('gmail sync')) {
-      return 'Gmail Sync';
+      return 'Unidentified Payment';
     }
     
     if (isUPITransaction(source)) {
@@ -659,16 +687,77 @@ const Dashboard: React.FC<DashboardProps> = ({
       }
       return 'UPI Payment';
     }
-    // For cards, use brandName if available, otherwise extract from source
-    if (brandName && brandName !== 'Card' && brandName !== 'CARDHOLDER') {
+    
+    // For cards, prioritize bank name extraction
+    const extractedBankName = getBankName(source);
+    if (extractedBankName !== 'Bank') {
+      return extractedBankName;
+    }
+    
+    // Use brandName if available and meaningful
+    if (brandName && brandName !== 'Card' && brandName !== 'CARDHOLDER' && brandName !== 'Bank') {
       return brandName;
     }
-    // Extract from source for cards
+    
+    // Extract from source for cards - Enhanced patterns
+    // Pattern 1: "ICICI Bank Credit ****1005" -> "ICICI Bank"
+    const bankCardPattern = source.match(/^([A-Za-z\s]+?)\s+(?:Bank\s+)?(?:Credit|Debit|Card)/i);
+    if (bankCardPattern) {
+      const extracted = bankCardPattern[1].trim();
+      if (extracted.length >= 3 && extracted.length <= 25) {
+        // Handle specific cases
+        if (extracted.toLowerCase() === 'icici') return 'ICICI Bank';
+        if (extracted.toLowerCase() === 'hdfc') return 'HDFC Bank';
+        if (extracted.toLowerCase() === 'axis') return 'Axis Bank';
+        if (extracted.toLowerCase() === 'sbi') return 'SBI';
+        return extracted;
+      }
+    }
+    
+    // Pattern 2: "BankName ****1234" -> "BankName"
     const brandMatch = source.match(/^([A-Za-z\s]+)(?=\s*\*)/);
     if (brandMatch) {
-      return brandMatch[1].trim();
+      const extracted = brandMatch[1].trim();
+      if (extracted.length >= 3 && extracted.length <= 25) {
+        // Handle specific cases
+        if (extracted.toLowerCase() === 'icici') return 'ICICI Bank';
+        if (extracted.toLowerCase() === 'hdfc') return 'HDFC Bank';
+        if (extracted.toLowerCase() === 'axis') return 'Axis Bank';
+        if (extracted.toLowerCase() === 'sbi') return 'SBI';
+        return extracted;
+      }
     }
-    return 'CARDHOLDER';
+    
+    // Pattern 3: Try to extract meaningful first word(s)
+    const words = source.split(/\s+/);
+    if (words.length >= 2) {
+      const firstTwoWords = `${words[0]} ${words[1]}`;
+      const lowerTwo = firstTwoWords.toLowerCase();
+      if (lowerTwo === 'icici bank') return 'ICICI Bank';
+      if (lowerTwo === 'hdfc bank') return 'HDFC Bank';
+      if (lowerTwo === 'axis bank') return 'Axis Bank';
+      if (lowerTwo === 'kotak bank') return 'Kotak Bank';
+      if (lowerTwo === 'yes bank') return 'YES Bank';
+    }
+    
+    if (words.length > 0) {
+      const firstWord = words[0];
+      const nonBankWords = ['card', 'debit', 'credit', 'payment', 'transaction', 'upi', 'vpa', 'dear', 'customer', 'gmail'];
+      if (firstWord.length >= 3 && firstWord.length <= 15 && 
+          /^[A-Za-z]+$/.test(firstWord) && 
+          !nonBankWords.includes(firstWord.toLowerCase())) {
+        // Handle specific single-word banks
+        if (firstWord.toLowerCase() === 'icici') return 'ICICI Bank';
+        if (firstWord.toLowerCase() === 'hdfc') return 'HDFC Bank';
+        if (firstWord.toLowerCase() === 'axis') return 'Axis Bank';
+        if (firstWord.toLowerCase() === 'sbi') return 'SBI';
+        if (firstWord.toLowerCase() === 'kotak') return 'Kotak';
+        return firstWord;
+      }
+    }
+    
+    // Last resort - return a more meaningful default
+    return 'Credit Card';
   };
 
   // Get professional card design based on bank
@@ -676,17 +765,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     const bankName = getBankName(source);
     const s = source.toLowerCase();
     const isUPI = isUPITransaction(source) || source === 'UPI Payment';
-    const isGmailSync = s.includes('gmail sync') || source === 'Gmail Sync';
+    const isGmailSync = s.includes('gmail sync') || source === 'Unidentified Payment';
 
-    // Gmail Sync Card Design - Professional Blue/Grey gradient
+    // Unidentified Payments Card Design - Professional Grey gradient
     if (isGmailSync) {
       return {
         bg: 'bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800',
-        accent: 'from-blue-400/20 to-slate-400/20',
+        accent: 'from-slate-400/20 to-slate-500/20',
         text: 'text-white',
-        logo: 'GMAIL',
+        logo: 'OTHER',
         chip: 'bg-yellow-400',
-        network: 'SYNC',
+        network: 'MISC',
         gold: false,
         pattern: null
       };
@@ -1229,11 +1318,64 @@ const Dashboard: React.FC<DashboardProps> = ({
             </h3>
             <p className="lg:hidden text-[10px] text-slate-400 font-medium mt-0.5">Active payment sources</p>
           </div>
-          <button className="flex items-center gap-1 text-[10px] font-bold text-[var(--brand-primary)] transition-colors hover:text-indigo-800 active:scale-95">
-            <span className="lg:hidden">▼</span>
-            <Plus size={12} className="hidden lg:inline" />
-            <span className="hidden lg:inline">Manage</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Date Filter Dropdown */}
+            <div className="relative">
+              <select
+                value={`${selectedMonth}-${selectedYear}`}
+                onChange={(e) => {
+                  const [month, year] = e.target.value.split('-');
+                  setSelectedMonth(parseInt(month));
+                  setSelectedYear(parseInt(year));
+                }}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/20 focus:border-[var(--brand-primary)] transition-all appearance-none cursor-pointer pr-8"
+              >
+                {/* Current Year Options */}
+                {Array.from({ length: 12 }, (_, i) => {
+                  const month = i;
+                  const year = new Date().getFullYear();
+                  const monthName = months[month];
+                  const isCurrentMonth = month === new Date().getMonth() && year === new Date().getFullYear();
+                  return (
+                    <option key={`${month}-${year}`} value={`${month}-${year}`}>
+                      {isCurrentMonth ? `${monthName} (This Month)` : `${monthName} ${year}`}
+                    </option>
+                  );
+                })}
+                
+                {/* Previous Year Options (if we have data) */}
+                {new Date().getFullYear() > 2024 && Array.from({ length: 12 }, (_, i) => {
+                  const month = i;
+                  const year = new Date().getFullYear() - 1;
+                  const monthName = months[month];
+                  return (
+                    <option key={`${month}-${year}`} value={`${month}-${year}`}>
+                      {monthName} {year}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
+                <Calendar size={12} className="text-slate-400" />
+              </div>
+            </div>
+            
+            <button className="flex items-center gap-1 text-[10px] font-bold text-[var(--brand-primary)] transition-colors hover:text-indigo-800 active:scale-95">
+              <span className="lg:hidden">▼</span>
+              <Plus size={12} className="hidden lg:inline" />
+              <span className="hidden lg:inline">Manage</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Date Filter Info */}
+        <div className="flex items-center justify-between px-1 text-[10px] font-bold text-slate-500">
+          <span>
+            Showing {months[selectedMonth]} {selectedYear} transactions
+          </span>
+          <span>
+            {cardInsights.reduce((sum, card) => sum + card.count, 0)} payments
+          </span>
         </div>
 
         {/* No cards message */}
@@ -1255,11 +1397,11 @@ const Dashboard: React.FC<DashboardProps> = ({
               const bankName = getBankName(card.type);
               const cardNetwork = getCardNetwork(card.type);
               const isUPI = isUPITransaction(card.type) || card.type === 'UPI Payment';
-              const isGmailSync = card.type === 'Gmail Sync' || card.type.toLowerCase().includes('gmail sync');
+              const isGmailSync = card.type === 'Unidentified Payment' || card.type.toLowerCase().includes('gmail sync');
               // For unified UPI card, use "UPI Payment" as brand name
-              // For Gmail Sync, use "Gmail Sync" as brand name
-              const finalBrandName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Gmail Sync' : card.brandName);
-              const cardholderName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Gmail Sync' : getCardholderName(card.type, finalBrandName));
+              // For Unidentified Payment, use "Unidentified Payment" as brand name
+              const finalBrandName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Unidentified Payment' : card.brandName);
+              const cardholderName = isUPI ? 'UPI Payment' : (isGmailSync ? 'Unidentified Payment' : getCardholderName(card.type, finalBrandName));
               
               // Create unique key combining type, cardNumber, and index to avoid duplicates
               const uniqueKey = `${card.type}-${card.cardNumber || 'no-card'}-${idx}`;
@@ -1327,6 +1469,19 @@ const Dashboard: React.FC<DashboardProps> = ({
                               </p>
                             </div>
                           </div>
+                        ) : isGmailSync ? (
+                          // Unidentified Payment - Show professional misc payment icon
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                              <CircleDollarSign size={24} className="text-white" strokeWidth={2} />
+                            </div>
+                            <div>
+                              <p className="text-lg md:text-xl font-black tracking-wider">OTHER</p>
+                              <p className="text-[8px] md:text-[9px] font-bold text-white/60 uppercase tracking-widest">
+                                Miscellaneous
+                              </p>
+                            </div>
+                          </div>
                         ) : (
                           // Regular Card - Show card number
                           <>
@@ -1352,7 +1507,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <div className="flex items-end justify-between">
                       <div className="flex-1">
                         <p className="text-[7px] md:text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">
-                          {isUPI ? 'Payment Method' : 'Cardholder'}
+                          {isUPI ? 'Payment Method' : isGmailSync ? 'Payment Type' : 'Cardholder'}
                         </p>
                         <p className="text-xs md:text-sm font-black uppercase tracking-wider truncate">
                           {cardholderName}
@@ -1437,8 +1592,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               ))}
             </div>
           </div>
-          <div className="h-[180px] md:h-[220px] lg:h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+          <div className="h-[180px] md:h-[220px] lg:h-[250px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minHeight={180} minWidth={0}>
               {chartPeriod === 'T' ? (
                 <LineChart 
                   data={todayHourlyData}
